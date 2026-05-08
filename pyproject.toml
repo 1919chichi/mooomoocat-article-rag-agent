@@ -1,0 +1,30 @@
+[build-system]
+requires = ["setuptools>=68.0", "wheel"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "mooomoocatrag"
+version = "0.1.0"
+description = "猫笔刀文章 RAG Agent"
+requires-python = ">=3.10"
+dependencies = [
+    "pydantic-settings>=2.0",
+    "typer>=0.9",
+    "openai>=1.0",
+    "chromadb>=0.4",
+]
+
+[project.optional-dependencies]
+dev = [
+    "pytest>=7.0",
+    "pytest-cov",
+]
+
+[project.scripts]
+mooomoocatrag = "mooomoocatrag.cli:app"
+
+[tool.setuptools.packages.find]
+where = ["src"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
