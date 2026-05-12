@@ -14,7 +14,7 @@ def get_or_create_collection(
     config: Settings, embedding_model: str, embedding_dimension: int
 ) -> Collection:
     client = chromadb.PersistentClient(path=config.chroma_dir)
-    return client.get_or_create(
+    return client.get_or_create_collection(
         name=COLLECTION_NAME,
         metadata={
             "hnsw:space": config.VECTOR_DISTANCE_METRIC,
@@ -58,7 +58,7 @@ def delete_chunks(chunk_ids: list[str], config: Settings) -> None:
     if not chunk_ids:
         return
     client = chromadb.PersistentClient(path=config.chroma_dir)
-    collection = client.get_or_create(name=COLLECTION_NAME)
+    collection = client.get_or_create_collection(name=COLLECTION_NAME)
     collection.delete(ids=chunk_ids)
 
 
@@ -66,7 +66,7 @@ def query_similar(
     query_vector: list[float], top_k: int, config: Settings
 ) -> list[dict]:
     client = chromadb.PersistentClient(path=config.chroma_dir)
-    collection = client.get_or_create(name=COLLECTION_NAME)
+    collection = client.get_or_create_collection(name=COLLECTION_NAME)
 
     overfetch = max(top_k * 3, top_k + 10)
 

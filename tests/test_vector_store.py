@@ -63,11 +63,11 @@ class TestGetOrCreateCollection:
         )
 
         mock_client = mock_persistent_client.return_value
-        mock_collection = mock_client.get_or_create.return_value
+        mock_collection = mock_client.get_or_create_collection.return_value
 
         collection = get_or_create_collection(settings, "my-model", 1536)
 
-        mock_client.get_or_create.assert_called_once_with(
+        mock_client.get_or_create_collection.assert_called_once_with(
             name=COLLECTION_NAME,
             metadata={
                 "hnsw:space": "cosine",
@@ -85,7 +85,7 @@ class TestAddChunks:
         settings = Settings(VECTOR_DISTANCE_METRIC="cosine")
 
         mock_client = mock_persistent_client.return_value
-        mock_collection = mock_client.get_or_create.return_value
+        mock_collection = mock_client.get_or_create_collection.return_value
 
         chunks = [make_chunk("chunk-1"), make_chunk("chunk-2")]
         vectors = [[0.1, 0.2], [0.3, 0.4]]
@@ -124,7 +124,7 @@ class TestDeleteChunks:
         settings = Settings()
 
         mock_client = mock_persistent_client.return_value
-        mock_collection = mock_client.get_or_create.return_value
+        mock_collection = mock_client.get_or_create_collection.return_value
 
         delete_chunks(["chunk-1", "chunk-2"], settings)
 
@@ -143,7 +143,7 @@ class TestQuerySimilar:
         settings = Settings()
 
         mock_client = mock_persistent_client.return_value
-        mock_collection = mock_client.get_or_create.return_value
+        mock_collection = mock_client.get_or_create_collection.return_value
         mock_collection.query.return_value = {
             "distances": [[0.1, 0.2, 0.3, 0.4, 0.5]],
             "metadatas": [[{}, {}, {}, {}, {}]],
@@ -166,7 +166,7 @@ class TestQuerySimilar:
         settings = Settings()
 
         mock_client = mock_persistent_client.return_value
-        mock_collection = mock_client.get_or_create.return_value
+        mock_collection = mock_client.get_or_create_collection.return_value
         mock_collection.query.return_value = {
             "distances": [[0.1] * 20],
             "metadatas": [[{}] * 20],

@@ -43,6 +43,7 @@ class Settings(BaseSettings):
     RAG_CONTEXT_TOKEN_BUDGET: int = 6000
     LOG_LEVEL: str = "INFO"
 
+    EMBEDDING_PROVIDER: str = "openai"
     EMBEDDING_BASE_URL: str = ""
     EMBEDDING_API_KEY: str = ""
     LLM_BASE_URL: str = ""
