@@ -1,7 +1,7 @@
 # 项目进度控制
 
 > 本文件由团队 lead 维护，记录各阶段完成状态和阻塞项。
-> 最后更新：2026-05-08
+> 最后更新：2026-05-12
 
 ---
 
@@ -147,5 +147,7 @@
 
 | 日期 | 变更 |
 |---|---|
+| 2026-05-12 | 整理 docs 文档结构：规范化 RAG Agent 面试问题清单，补充历史规划和历史 Agent 分工定位，重组 README 文档入口 |
+| 2026-05-12 | 新增改动需求文档沉淀流程，并在 README 增加文档入口 |
 | 2026-05-08 | 打通 CLI ingest/search/chat 主链路，补齐 parser/indexer/retriever/vector_store/chat/chunker 缺口，新增 CLI/scanner/indexer 测试，更新 README |
 | 2026-05-08 | 初始化进度文件 |

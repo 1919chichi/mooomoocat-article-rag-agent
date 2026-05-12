@@ -1,0 +1,22 @@
+schema: spec-driven
+
+context: |
+  项目文档、OpenSpec artifact、设计说明、规格说明和任务拆分默认使用中文撰写。
+  技术标识符、代码符号、文件路径、命令、配置项、枚举值和 OpenSpec 必需语法关键字可以保留英文。
+  本项目是 Python CLI 本地文章 RAG Agent，核心链路是 ingest -> search -> chat，并要求回答前先检索。
+
+rules:
+  proposal:
+    - 默认使用中文撰写 proposal。
+    - 如果 OpenSpec 模板标题为英文，优先翻译为清晰的中文标题。
+    - 代码路径、配置名、命令名和能力名保持原文。
+  design:
+    - 默认使用中文撰写 design。
+    - 解释技术决策时使用中文，保留必要的英文 API 名称和代码符号。
+  specs:
+    - 默认使用中文撰写 requirement 正文和 scenario 描述。
+    - 每条 requirement 正文必须包含 `SHALL` 或 `MUST`，以满足 OpenSpec strict validate。
+    - 保留 OpenSpec 解析依赖的结构关键字，例如 `## ADDED Requirements`、`### Requirement:`、`#### Scenario:`、`WHEN`、`THEN`、`AND`。
+  tasks:
+    - 默认使用中文撰写任务标题和任务描述。
+    - 保留 `- [ ]` checkbox 格式和任务编号，确保 apply 阶段可以追踪进度。
