@@ -17,6 +17,7 @@
 
 - [MVP 历史需求与任务拆分](docs/mooomoocat-article-rag-agent-plan.md)
 - [项目进度控制](docs/progress.md)
+- [Qdrant + Elasticsearch 混合检索改造设计](docs/qdrant-es-hybrid-retrieval-design.md)
 
 流程文档：
 
