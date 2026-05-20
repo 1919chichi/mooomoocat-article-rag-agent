@@ -1,6 +1,5 @@
 from __future__ import annotations
 
-import shutil
 from pathlib import Path
 
 import typer
@@ -20,7 +19,15 @@ from mooomoocatrag.models import IndexManifest
 from mooomoocatrag.rag.chat import chat_turn
 from mooomoocatrag.rag.embeddings import embed_texts
 from mooomoocatrag.rag.retriever import retrieve
-from mooomoocatrag.rag.vector_store import add_chunks, check_consistency, delete_chunks
+from mooomoocatrag.rag.vector_store import (
+    check_consistency,
+    clear_dense_store,
+    clear_keyword_store,
+    delete_dense_chunks,
+    delete_keyword_chunks,
+    upsert_dense_chunks,
+    upsert_keyword_chunks,
+)
 
 app = typer.Typer(name="mooomoocatrag", help="猫笔刀文章 RAG Agent")
 
@@ -35,6 +42,7 @@ def ingest(
     setup_logging()
     source_root = _validated_source_root(settings)
     _require_embedding_config(settings)
+    _require_retrieval_backend_config(settings)
 
     if rebuild:
         _confirm_rebuild(force)
@@ -62,17 +70,40 @@ def ingest(
     current_article_ids = {article.article_id for article in scanned_articles}
     for deleted_id in find_deleted_article_ids(manifest, current_article_ids):
         deleted_entry = manifest.articles.get(deleted_id, {})
-        try:
-            delete_chunks(deleted_entry.get("chunk_ids", []), settings)
-        except Exception as exc:  # pragma: no cover - defensive integration path
-            stats["warnings"] += 1
-            typer.secho(f"删除旧 chunk 失败：{deleted_id}: {exc}", fg=typer.colors.YELLOW)
+        pending_delete_ids = _all_cleanup_chunk_ids(deleted_entry)
+        warnings = _delete_remote_chunks(
+            pending_delete_ids,
+            settings,
+            deleted_id,
+        )
+        stats["warnings"] += warnings
+        if warnings:
+            deleted_entry["deleted"] = True
+            deleted_entry["chunk_ids"] = pending_delete_ids
+            deleted_entry.pop("cleanup_chunk_ids", None)
+            continue
         manifest.articles.pop(deleted_id, None)
         stats["deleted"] += 1
 
     for article in scanned_articles:
         existing_entry = manifest.articles.get(article.article_id)
-        if existing_entry and existing_entry.get("content_hash") == article.content_hash:
+        if existing_entry and existing_entry.get("cleanup_chunk_ids"):
+            cleanup_ids = existing_entry.get("cleanup_chunk_ids", [])
+            warnings = _delete_remote_chunks(
+                cleanup_ids,
+                settings,
+                f"{article.source_rel_path} stale cleanup",
+            )
+            stats["warnings"] += warnings
+            if warnings == 0:
+                existing_entry.pop("cleanup_chunk_ids", None)
+
+        was_deleted = bool(existing_entry and existing_entry.get("deleted"))
+        if (
+            existing_entry
+            and not was_deleted
+            and existing_entry.get("content_hash") == article.content_hash
+        ):
             stats["skipped"] += 1
             continue
 
@@ -94,18 +125,24 @@ def ingest(
         for chunk in chunks:
             chunk.embedding_dimension = embedding_dimension
 
-        add_chunks(chunks, vectors, settings)
+        upsert_dense_chunks(chunks, vectors, settings)
+        try:
+            upsert_keyword_chunks(chunks, settings)
+        except Exception:
+            _rollback_new_dense_chunks(chunks, settings)
+            raise
 
+        cleanup_chunk_ids: list[str] = []
         if existing_entry:
-            old_chunk_ids = existing_entry.get("chunk_ids", [])
-            try:
-                delete_chunks(old_chunk_ids, settings)
-            except Exception as exc:  # pragma: no cover - defensive integration path
-                stats["warnings"] += 1
-                typer.secho(
-                    f"删除旧 chunk 失败：{article.source_rel_path}: {exc}",
-                    fg=typer.colors.YELLOW,
-                )
+            old_chunk_ids = _all_cleanup_chunk_ids(existing_entry)
+            warnings = _delete_remote_chunks(
+                old_chunk_ids,
+                settings,
+                article.source_rel_path,
+            )
+            stats["warnings"] += warnings
+            if warnings:
+                cleanup_chunk_ids = old_chunk_ids
             stats["updated"] += 1
         else:
             stats["added"] += 1
@@ -114,6 +151,7 @@ def ingest(
             article,
             chunks,
             existing_entry=existing_entry,
+            cleanup_chunk_ids=cleanup_chunk_ids,
         )
         stats["chunks"] += len(chunks)
 
@@ -139,6 +177,7 @@ def search(
     settings = get_settings()
     setup_logging()
     _require_embedding_config(settings)
+    _require_retrieval_backend_config(settings)
     manifest = _load_ready_manifest(settings)
     check_consistency(settings, manifest)
 
@@ -151,8 +190,9 @@ def search(
     for index, result in enumerate(results, 1):
         heading = result.chunk.nearest_heading or "无"
         preview = _preview(result.chunk.text)
+        sources = "+".join(result.sources or ["dense"])
         typer.echo(
-            f"[{index}] 相似度: {result.similarity:.2f} | "
+            f"[{index}] 融合分数: {result.similarity:.2f} | 来源: {sources} | "
             f"{result.chunk.title} | {result.chunk.source_rel_path} | "
             f"chunk {result.chunk.chunk_index} | 小标题：{heading}"
         )
@@ -168,6 +208,7 @@ def chat() -> None:
     settings = get_settings()
     setup_logging()
     _require_embedding_config(settings)
+    _require_retrieval_backend_config(settings)
     _require_llm_config(settings)
     manifest = _load_ready_manifest(settings)
     check_consistency(settings, manifest)
@@ -243,6 +284,30 @@ def _require_llm_config(settings: Settings) -> None:
         _fail("缺少 LLM 配置：" + "、".join(missing))
 
 
+def _require_retrieval_backend_config(settings: Settings) -> None:
+    missing = []
+    if settings.VECTOR_STORE == "qdrant":
+        if not settings.QDRANT_URL:
+            missing.append("QDRANT_URL")
+        if not settings.QDRANT_COLLECTION:
+            missing.append("QDRANT_COLLECTION")
+
+    if settings.KEYWORD_STORE == "elasticsearch":
+        if not settings.ELASTICSEARCH_URL:
+            missing.append("ELASTICSEARCH_URL")
+        if not settings.ELASTICSEARCH_INDEX:
+            missing.append("ELASTICSEARCH_INDEX")
+        if not settings.ELASTICSEARCH_API_KEY and not (
+            settings.ELASTICSEARCH_USERNAME and settings.ELASTICSEARCH_PASSWORD
+        ):
+            missing.append(
+                "ELASTICSEARCH_API_KEY 或 ELASTICSEARCH_USERNAME + ELASTICSEARCH_PASSWORD"
+            )
+
+    if missing:
+        _fail("缺少检索后端配置：" + "、".join(missing))
+
+
 def _load_ready_manifest(settings: Settings) -> IndexManifest:
     manifest = load_manifest(settings.DATA_DIR)
     if not manifest.articles:
@@ -259,10 +324,9 @@ def _confirm_rebuild(force: bool) -> None:
 
 
 def _clear_index_data(settings: Settings) -> None:
-    chroma_dir = Path(settings.chroma_dir)
     manifest_path = Path(settings.manifest_path)
-    if chroma_dir.exists():
-        shutil.rmtree(chroma_dir)
+    clear_dense_store(settings)
+    clear_keyword_store(settings)
     if manifest_path.exists():
         manifest_path.unlink()
 
@@ -277,6 +341,41 @@ def _preview(text: str, max_chars: int = 200) -> str:
 def _fail(message: str) -> None:
     typer.secho(message, fg=typer.colors.RED, err=True)
     raise typer.Exit(code=1)
+
+
+def _delete_remote_chunks(chunk_ids: list[str], settings: Settings, label: str) -> int:
+    if not chunk_ids:
+        return 0
+    warnings = 0
+    try:
+        delete_dense_chunks(chunk_ids, settings)
+    except Exception as exc:  # pragma: no cover - defensive integration path
+        warnings += 1
+        typer.secho(f"删除 Qdrant chunk 失败：{label}: {exc}", fg=typer.colors.YELLOW)
+    try:
+        delete_keyword_chunks(chunk_ids, settings)
+    except Exception as exc:  # pragma: no cover - defensive integration path
+        warnings += 1
+        typer.secho(f"删除 Elasticsearch chunk 失败：{label}: {exc}", fg=typer.colors.YELLOW)
+    return warnings
+
+
+def _rollback_new_dense_chunks(chunks: list, settings: Settings) -> None:
+    try:
+        delete_dense_chunks([chunk.chunk_id for chunk in chunks], settings)
+    except Exception as exc:  # pragma: no cover - defensive integration path
+        typer.secho(
+            f"回滚 Qdrant 新写入 chunk 失败：{exc}",
+            fg=typer.colors.YELLOW,
+        )
+
+
+def _all_cleanup_chunk_ids(entry: dict) -> list[str]:
+    chunk_ids = list(entry.get("chunk_ids", []))
+    for chunk_id in entry.get("cleanup_chunk_ids", []):
+        if chunk_id not in chunk_ids:
+            chunk_ids.append(chunk_id)
+    return chunk_ids
 
 
 if __name__ == "__main__":

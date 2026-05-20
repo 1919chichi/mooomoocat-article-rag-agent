@@ -1,33 +1,41 @@
 from __future__ import annotations
 
-from datetime import datetime
-from unittest.mock import patch
+from unittest.mock import MagicMock, patch
 
-import chromadb
 import pytest
 
 from mooomoocatrag.config import Settings
 from mooomoocatrag.models import ChunkMeta, IndexManifest
 from mooomoocatrag.rag.vector_store import (
-    COLLECTION_NAME,
-    add_chunks,
+    ElasticsearchKeywordStore,
+    QdrantVectorStore,
     check_consistency,
-    delete_chunks,
-    get_or_create_collection,
-    query_similar,
+    clear_dense_store,
+    clear_keyword_store,
+    delete_dense_chunks,
+    delete_keyword_chunks,
+    query_dense,
+    query_keyword,
+    upsert_dense_chunks,
+    upsert_keyword_chunks,
 )
-
-
-@pytest.fixture
-def ephemeral_client():
-    return chromadb.EphemeralClient()
 
 
 @pytest.fixture
 def settings():
     return Settings(
-        VECTOR_STORE="chroma",
+        VECTOR_STORE="qdrant",
+        KEYWORD_STORE="elasticsearch",
+        RETRIEVAL_MODE="hybrid_rrf",
         VECTOR_DISTANCE_METRIC="cosine",
+        EMBEDDING_MODEL="test-model",
+        QDRANT_URL="http://localhost:6333",
+        QDRANT_COLLECTION="mooomoocat_articles_v1",
+        ELASTICSEARCH_URL="https://localhost:9200",
+        ELASTICSEARCH_USERNAME="elastic",
+        ELASTICSEARCH_PASSWORD="secret",
+        ELASTICSEARCH_INDEX="mooomoocat_article_chunks_v1",
+        ELASTICSEARCH_ANALYZER="smartcn",
         CHUNK_TARGET_MIN_CHARS=600,
         CHUNK_TARGET_MAX_CHARS=1000,
         CHUNK_OVERLAP=100,
@@ -54,133 +62,171 @@ def make_chunk(
     )
 
 
-class TestGetOrCreateCollection:
-    @patch("mooomoocatrag.rag.vector_store.chromadb.PersistentClient")
-    def test_creates_with_metadata(self, mock_persistent_client):
-        settings = Settings(
-            VECTOR_STORE="chroma",
-            VECTOR_DISTANCE_METRIC="cosine",
-        )
+class TestQdrantVectorStore:
+    @patch("mooomoocatrag.rag.vector_store.QdrantClient")
+    def test_upsert_creates_collection_and_points(self, mock_client_class, settings):
+        store = QdrantVectorStore(settings)
+        mock_client = mock_client_class.return_value
+        mock_client.collection_exists.return_value = False
 
-        mock_client = mock_persistent_client.return_value
-        mock_collection = mock_client.get_or_create_collection.return_value
+        store.upsert_chunks([make_chunk()], [[0.1, 0.2, 0.3]])
 
-        collection = get_or_create_collection(settings, "my-model", 1536)
+        mock_client.create_collection.assert_called_once()
+        mock_client.upsert.assert_called_once()
+        call_kwargs = mock_client.upsert.call_args.kwargs
+        assert call_kwargs["collection_name"] == settings.QDRANT_COLLECTION
+        assert call_kwargs["wait"] is True
 
-        mock_client.get_or_create_collection.assert_called_once_with(
-            name=COLLECTION_NAME,
-            metadata={
-                "hnsw:space": "cosine",
-                "schema_version": "1",
-                "embedding_model": "my-model",
-                "embedding_dimension": "1536",
-            },
-        )
-        assert collection == mock_collection
+    @patch("mooomoocatrag.rag.vector_store.QdrantClient")
+    def test_query_dense_returns_normalized_candidates(self, mock_client_class, settings):
+        store = QdrantVectorStore(settings)
+        mock_client = mock_client_class.return_value
+        point = MagicMock()
+        point.id = "chunk-1"
+        point.score = 0.91
+        point.payload = {
+            "article_id": "article-1",
+            "chunk_index": 0,
+            "nearest_heading": "Heading",
+            "source_rel_path": "a.md",
+            "title": "Title",
+            "content_hash": "hash",
+            "embedding_model": "test-model",
+            "embedding_dimension": 1536,
+            "text": "doc1",
+        }
+        mock_client.search.return_value = [point]
 
+        results = store.query_dense([0.1, 0.2], top_k=5)
 
-class TestAddChunks:
-    @patch("mooomoocatrag.rag.vector_store.chromadb.PersistentClient")
-    def test_adds_chunks_with_metadata(self, mock_persistent_client):
-        settings = Settings(VECTOR_DISTANCE_METRIC="cosine")
-
-        mock_client = mock_persistent_client.return_value
-        mock_collection = mock_client.get_or_create_collection.return_value
-
-        chunks = [make_chunk("chunk-1"), make_chunk("chunk-2")]
-        vectors = [[0.1, 0.2], [0.3, 0.4]]
-
-        add_chunks(chunks, vectors, settings)
-
-        mock_collection.add.assert_called_once()
-        call_kwargs = mock_collection.add.call_args.kwargs
-        assert call_kwargs["ids"] == ["chunk-1", "chunk-2"]
-        assert call_kwargs["documents"] == [
-            "This is test chunk text.",
-            "This is test chunk text.",
+        mock_client.search.assert_called_once()
+        assert results == [
+            {
+                "chunk_id": "chunk-1",
+                "score": 0.91,
+                "metadata": point.payload,
+                "document": "doc1",
+                "source": "dense",
+            }
         ]
-        assert call_kwargs["embeddings"] == [[0.1, 0.2], [0.3, 0.4]]
 
-        metadata = call_kwargs["metadatas"]
-        assert metadata[0]["article_id"] == "article-1"
-        assert metadata[0]["chunk_index"] == 0
-        assert metadata[0]["nearest_heading"] == "Test Heading"
-        assert metadata[0]["source_rel_path"] == "articles/test.md"
-        assert metadata[0]["title"] == "Test Article"
-        assert metadata[0]["content_hash"] == "abc123"
-        assert metadata[0]["embedding_model"] == "test-model"
-        assert metadata[0]["embedding_dimension"] == 1536
+    @patch("mooomoocatrag.rag.vector_store.QdrantClient")
+    def test_delete_and_clear(self, mock_client_class, settings):
+        store = QdrantVectorStore(settings)
+        mock_client = mock_client_class.return_value
+        mock_client.collection_exists.return_value = True
 
-    @patch("mooomoocatrag.rag.vector_store.chromadb.PersistentClient")
-    def test_empty_chunks(self, mock_persistent_client):
-        settings = Settings()
-        add_chunks([], [], settings)
-        mock_persistent_client.return_value.get_or_create.assert_not_called()
+        store.delete_chunks(["chunk-1", "chunk-2"])
+        store.clear()
+
+        mock_client.delete.assert_called_once()
+        mock_client.delete_collection.assert_called_once_with(settings.QDRANT_COLLECTION)
 
 
-class TestDeleteChunks:
-    @patch("mooomoocatrag.rag.vector_store.chromadb.PersistentClient")
-    def test_deletes_by_ids(self, mock_persistent_client):
-        settings = Settings()
+class TestElasticsearchKeywordStore:
+    @patch("mooomoocatrag.rag.vector_store.Elasticsearch")
+    def test_upsert_creates_index_and_bulk_writes(self, mock_es_class, settings):
+        store = ElasticsearchKeywordStore(settings)
+        mock_client = mock_es_class.return_value
+        mock_client.indices.exists.return_value = False
 
-        mock_client = mock_persistent_client.return_value
-        mock_collection = mock_client.get_or_create_collection.return_value
+        with patch("mooomoocatrag.rag.vector_store.helpers.bulk") as mock_bulk:
+            store.upsert_chunks([make_chunk()])
 
-        delete_chunks(["chunk-1", "chunk-2"], settings)
+        mock_client.indices.create.assert_called_once()
+        mock_bulk.assert_called_once()
 
-        mock_collection.delete.assert_called_once_with(ids=["chunk-1", "chunk-2"])
-
-    @patch("mooomoocatrag.rag.vector_store.chromadb.PersistentClient")
-    def test_empty_delete(self, mock_persistent_client):
-        settings = Settings()
-        delete_chunks([], settings)
-        mock_persistent_client.return_value.get_or_create.assert_not_called()
-
-
-class TestQuerySimilar:
-    @patch("mooomoocatrag.rag.vector_store.chromadb.PersistentClient")
-    def test_overfetch(self, mock_persistent_client):
-        settings = Settings()
-
-        mock_client = mock_persistent_client.return_value
-        mock_collection = mock_client.get_or_create_collection.return_value
-        mock_collection.query.return_value = {
-            "distances": [[0.1, 0.2, 0.3, 0.4, 0.5]],
-            "metadatas": [[{}, {}, {}, {}, {}]],
-            "documents": [["d1", "d2", "d3", "d4", "d5"]],
+    @patch("mooomoocatrag.rag.vector_store.Elasticsearch")
+    def test_query_keyword_returns_normalized_candidates(self, mock_es_class, settings):
+        store = ElasticsearchKeywordStore(settings)
+        mock_client = mock_es_class.return_value
+        mock_client.search.return_value = {
+            "hits": {
+                "hits": [
+                    {
+                        "_score": 12.3,
+                        "_source": {
+                            "chunk_id": "chunk-1",
+                            "article_id": "article-1",
+                            "chunk_index": 0,
+                            "nearest_heading": "Heading",
+                            "source_rel_path": "a.md",
+                            "title": "Title",
+                            "content_hash": "hash",
+                            "embedding_model": "test-model",
+                            "embedding_dimension": 1536,
+                            "text": "doc1",
+                        },
+                    }
+                ]
+            }
         }
 
-        result = query_similar([0.1, 0.2], top_k=2, config=settings)
+        results = store.query_keyword("cats", top_k=5)
 
-        mock_collection.query.assert_called_once_with(
-            query_embeddings=[[0.1, 0.2]],
-            n_results=12,
-            include=["distances", "metadatas", "documents"],
-        )
-        assert "distances" in result[0]
-        assert "metadatas" in result[0]
-        assert "documents" in result[0]
+        mock_client.search.assert_called_once()
+        assert results == [
+            {
+                "chunk_id": "chunk-1",
+                "score": 12.3,
+                "metadata": {
+                    "chunk_id": "chunk-1",
+                    "article_id": "article-1",
+                    "chunk_index": 0,
+                    "nearest_heading": "Heading",
+                    "source_rel_path": "a.md",
+                    "title": "Title",
+                    "content_hash": "hash",
+                    "embedding_model": "test-model",
+                    "embedding_dimension": 1536,
+                    "text": "doc1",
+                },
+                "document": "doc1",
+                "source": "keyword",
+            }
+        ]
 
-    @patch("mooomoocatrag.rag.vector_store.chromadb.PersistentClient")
-    def test_overfetch_top_k_10(self, mock_persistent_client):
-        settings = Settings()
+    @patch("mooomoocatrag.rag.vector_store.Elasticsearch")
+    def test_delete_and_clear(self, mock_es_class, settings):
+        store = ElasticsearchKeywordStore(settings)
+        mock_client = mock_es_class.return_value
+        mock_client.indices.exists.return_value = True
 
-        mock_client = mock_persistent_client.return_value
-        mock_collection = mock_client.get_or_create_collection.return_value
-        mock_collection.query.return_value = {
-            "distances": [[0.1] * 20],
-            "metadatas": [[{}] * 20],
-            "documents": [["d"] * 20],
-        }
+        store.delete_chunks(["chunk-1"])
+        store.clear()
 
-        result = query_similar([0.1, 0.2], top_k=10, config=settings)
+        mock_client.delete_by_query.assert_called_once()
+        mock_client.indices.delete.assert_called_once_with(index=settings.ELASTICSEARCH_INDEX)
 
-        mock_collection.query.assert_called_once_with(
-            query_embeddings=[[0.1, 0.2]],
-            n_results=30,
-            include=["distances", "metadatas", "documents"],
-        )
-        assert len(result[0]["distances"]) == 20
+
+class TestModuleWrappers:
+    @patch("mooomoocatrag.rag.vector_store.QdrantVectorStore")
+    def test_dense_wrappers_delegate(self, mock_store_class, settings):
+        store = mock_store_class.return_value
+
+        upsert_dense_chunks([make_chunk()], [[0.1, 0.2]], settings)
+        query_dense([0.1, 0.2], 4, settings)
+        delete_dense_chunks(["chunk-1"], settings)
+        clear_dense_store(settings)
+
+        store.upsert_chunks.assert_called_once()
+        store.query_dense.assert_called_once_with([0.1, 0.2], 4)
+        store.delete_chunks.assert_called_once_with(["chunk-1"])
+        store.clear.assert_called_once_with()
+
+    @patch("mooomoocatrag.rag.vector_store.ElasticsearchKeywordStore")
+    def test_keyword_wrappers_delegate(self, mock_store_class, settings):
+        store = mock_store_class.return_value
+
+        upsert_keyword_chunks([make_chunk()], settings)
+        query_keyword("cats", 4, settings)
+        delete_keyword_chunks(["chunk-1"], settings)
+        clear_keyword_store(settings)
+
+        store.upsert_chunks.assert_called_once()
+        store.query_keyword.assert_called_once_with("cats", 4)
+        store.delete_chunks.assert_called_once_with(["chunk-1"])
+        store.clear.assert_called_once_with()
 
 
 class TestCheckConsistency:
@@ -188,10 +234,14 @@ class TestCheckConsistency:
         manifest = IndexManifest(
             schema_version=1,
             source_root="",
-            vector_store="chroma",
+            vector_store="qdrant",
+            keyword_store="elasticsearch",
+            retrieval_mode="hybrid_rrf",
             vector_distance_metric="cosine",
             embedding_model="different-model",
             embedding_dimension=1536,
+            qdrant_collection="mooomoocat_articles_v1",
+            elasticsearch_index="mooomoocat_article_chunks_v1",
             chunker_config={
                 "chunk_target_min_chars": 600,
                 "chunk_target_max_chars": 1000,
@@ -202,14 +252,18 @@ class TestCheckConsistency:
         with pytest.raises(RuntimeError, match="embedding_model mismatch"):
             check_consistency(settings, manifest)
 
-    def test_vector_store_mismatch(self, settings):
+    def test_keyword_store_mismatch(self, settings):
         manifest = IndexManifest(
             schema_version=1,
             source_root="",
-            vector_store="other",
+            vector_store="qdrant",
+            keyword_store="other",
+            retrieval_mode="hybrid_rrf",
             vector_distance_metric="cosine",
             embedding_model="test-model",
             embedding_dimension=1536,
+            qdrant_collection="mooomoocat_articles_v1",
+            elasticsearch_index="mooomoocat_article_chunks_v1",
             chunker_config={
                 "chunk_target_min_chars": 600,
                 "chunk_target_max_chars": 1000,
@@ -217,17 +271,21 @@ class TestCheckConsistency:
             },
         )
 
-        with pytest.raises(RuntimeError, match="vector_store mismatch"):
+        with pytest.raises(RuntimeError, match="keyword_store mismatch"):
             check_consistency(settings, manifest)
 
-    def test_vector_distance_metric_mismatch(self, settings):
+    def test_retrieval_mode_mismatch(self, settings):
         manifest = IndexManifest(
             schema_version=1,
             source_root="",
-            vector_store="chroma",
-            vector_distance_metric="euclidean",
+            vector_store="qdrant",
+            keyword_store="elasticsearch",
+            retrieval_mode="dense_only",
+            vector_distance_metric="cosine",
             embedding_model="test-model",
             embedding_dimension=1536,
+            qdrant_collection="mooomoocat_articles_v1",
+            elasticsearch_index="mooomoocat_article_chunks_v1",
             chunker_config={
                 "chunk_target_min_chars": 600,
                 "chunk_target_max_chars": 1000,
@@ -235,25 +293,21 @@ class TestCheckConsistency:
             },
         )
 
-        with pytest.raises(RuntimeError, match="vector_distance_metric mismatch"):
+        with pytest.raises(RuntimeError, match="retrieval_mode mismatch"):
             check_consistency(settings, manifest)
 
-    def test_embedding_dimension_mismatch(self):
-        settings = Settings(
-            EMBEDDING_MODEL="test-model",
-            VECTOR_STORE="chroma",
-            VECTOR_DISTANCE_METRIC="cosine",
-            CHUNK_TARGET_MIN_CHARS=600,
-            CHUNK_TARGET_MAX_CHARS=1000,
-            CHUNK_OVERLAP=100,
-        )
+    def test_collection_and_index_mismatch(self, settings):
         manifest = IndexManifest(
             schema_version=1,
             source_root="",
-            vector_store="chroma",
+            vector_store="qdrant",
+            keyword_store="elasticsearch",
+            retrieval_mode="hybrid_rrf",
             vector_distance_metric="cosine",
             embedding_model="test-model",
-            embedding_dimension=768,
+            embedding_dimension=1536,
+            qdrant_collection="other_collection",
+            elasticsearch_index="other_index",
             chunker_config={
                 "chunk_target_min_chars": 600,
                 "chunk_target_max_chars": 1000,
@@ -261,73 +315,5 @@ class TestCheckConsistency:
             },
         )
 
-        with pytest.raises(RuntimeError, match="embedding_dimension mismatch"):
-            check_consistency(settings, manifest, embedding_dimension=1536)
-
-    def test_chunker_config_mismatch(self, settings):
-        manifest = IndexManifest(
-            schema_version=1,
-            source_root="",
-            vector_store="chroma",
-            vector_distance_metric="cosine",
-            embedding_model="test-model",
-            embedding_dimension=1536,
-            chunker_config={
-                "chunk_target_min_chars": 500,
-                "chunk_target_max_chars": 900,
-                "chunk_overlap": 50,
-            },
-        )
-
-        with pytest.raises(RuntimeError, match="chunker_config mismatch"):
+        with pytest.raises(RuntimeError, match="qdrant_collection mismatch"):
             check_consistency(settings, manifest)
-
-    def test_all_mismatch(self, settings):
-        manifest = IndexManifest(
-            schema_version=1,
-            source_root="",
-            vector_store="other",
-            vector_distance_metric="euclidean",
-            embedding_model="different",
-            embedding_dimension=768,
-            chunker_config={
-                "chunk_target_min_chars": 500,
-                "chunk_target_max_chars": 900,
-                "chunk_overlap": 50,
-            },
-        )
-
-        with pytest.raises(RuntimeError) as exc_info:
-            check_consistency(settings, manifest)
-
-        error_msg = str(exc_info.value)
-        assert "embedding_model mismatch" in error_msg
-        assert "vector_store mismatch" in error_msg
-        assert "vector_distance_metric mismatch" in error_msg
-        assert "chunker_config mismatch" in error_msg
-        assert "mooomoocatrag ingest --rebuild" in error_msg
-
-    def test_consistent(self):
-        settings = Settings(
-            EMBEDDING_MODEL="test-model",
-            VECTOR_STORE="chroma",
-            VECTOR_DISTANCE_METRIC="cosine",
-            CHUNK_TARGET_MIN_CHARS=600,
-            CHUNK_TARGET_MAX_CHARS=1000,
-            CHUNK_OVERLAP=100,
-        )
-        manifest = IndexManifest(
-            schema_version=1,
-            source_root="",
-            vector_store="chroma",
-            vector_distance_metric="cosine",
-            embedding_model="test-model",
-            embedding_dimension=1536,
-            chunker_config={
-                "chunk_target_min_chars": 600,
-                "chunk_target_max_chars": 1000,
-                "chunk_overlap": 100,
-            },
-        )
-
-        check_consistency(settings, manifest)

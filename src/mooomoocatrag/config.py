@@ -39,7 +39,7 @@ class Settings(BaseSettings):
     LLM_MODEL: str = ""
 
     TOP_K: int = 8
-    SIMILARITY_THRESHOLD: float = 0.5
+    SIMILARITY_THRESHOLD: float = 0.3
     RAG_CONTEXT_TOKEN_BUDGET: int = 6000
     LOG_LEVEL: str = "INFO"
 
@@ -49,8 +49,24 @@ class Settings(BaseSettings):
     LLM_BASE_URL: str = ""
     LLM_API_KEY: str = ""
 
-    VECTOR_STORE: str = "chroma"
+    VECTOR_STORE: str = "qdrant"
+    KEYWORD_STORE: str = "elasticsearch"
+    RETRIEVAL_MODE: str = "hybrid_rrf"
     VECTOR_DISTANCE_METRIC: str = "cosine"
+    QDRANT_URL: str = "http://127.0.0.1:6333"
+    QDRANT_API_KEY: str = ""
+    QDRANT_COLLECTION: str = "mooomoocat_articles_v1"
+    ELASTICSEARCH_URL: str = "https://127.0.0.1:9200"
+    ELASTICSEARCH_USERNAME: str = "elastic"
+    ELASTICSEARCH_PASSWORD: str = ""
+    ELASTICSEARCH_API_KEY: str = ""
+    ELASTICSEARCH_CA_CERT_PATH: str = ""
+    ELASTICSEARCH_INDEX: str = "mooomoocat_article_chunks_v1"
+    ELASTICSEARCH_ANALYZER: str = "smartcn"
+    HYBRID_DENSE_TOP_K: int = 24
+    HYBRID_KEYWORD_TOP_K: int = 24
+    HYBRID_FINAL_TOP_K: int = 8
+    HYBRID_RRF_K: int = 60
     EMBEDDING_MAX_TOKENS: int = 8191
     EMBEDDING_BATCH_SIZE: int = 32
     EMBEDDING_REQUESTS_PER_MINUTE: int = 60
@@ -81,10 +97,6 @@ class Settings(BaseSettings):
     @property
     def effective_llm_api_key(self) -> str:
         return self.LLM_API_KEY or self.OPENAI_COMPAT_API_KEY
-
-    @property
-    def chroma_dir(self) -> str:
-        return os.path.join(self.DATA_DIR, "chroma")
 
     @property
     def manifest_path(self) -> str:

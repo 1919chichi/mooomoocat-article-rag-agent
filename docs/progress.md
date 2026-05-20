@@ -1,13 +1,13 @@
 # 项目进度控制
 
 > 本文件由团队 lead 维护，记录各阶段完成状态和阻塞项。
-> 最后更新：2026-05-12
+> 最后更新：2026-05-20
 
 ---
 
-## 总体状态：MVP 代码已打通，待真实文章/API 验收
+## 总体状态：Hybrid Retrieval 代码已打通，待 OrbStack 依赖联调与真实验收
 
-已完成本地 CLI 主链路：`ingest -> Chroma/manifest -> search -> chat`。当前自动化测试覆盖模块逻辑和 CLI 编排，真实文章目录与真实 OpenAI-compatible API 仍需用户配置后手工验收。
+已完成本地 CLI 主链路的第二阶段升级：`ingest -> Qdrant + Elasticsearch + manifest -> hybrid retrieval -> chat`。当前自动化测试覆盖模块逻辑、CLI 编排和最小 smoke flow；OrbStack 依赖部署资产已入库，但本机真实 Qdrant / Elasticsearch / OpenAI-compatible API 仍需用户环境联调。
 
 ---
 
@@ -64,12 +64,12 @@
 |---|---|---|
 | 实现 embeddings.py（OpenAI-compatible API，base_url/api_key/model 可配） | ✅ | 使用 `openai` SDK |
 | 实现 embedding 批处理和限流（batch=32，RPM=60，429/5xx 退避重试） | ✅ | 有单测覆盖 |
-| 实现 vector_store.py（Chroma 持久化，collection 管理，chunk CRUD） | ✅ | `add/delete/query` 已实现 |
+| 实现 vector_store.py（Qdrant dense store + Elasticsearch keyword store） | ✅ | 已支持 collection/index 初始化、upsert、delete、query 和一致性检查 |
 | 实现 embedding 模型一致性检查（模型/维度不一致提示 rebuild） | ✅ | 检查模型、维度、向量库、距离度量、chunker 配置 |
 | 单元测试：test_embeddings.py | ✅ | mock API，不依赖真实服务 |
 | 单元测试：test_vector_store.py | ✅ | mock Chroma，覆盖一致性检查 |
 
-**完成标准**：embedding 批处理和限流正确，Chroma 读写逻辑正确，模型/维度不一致时拒绝，测试不依赖真实 API。
+**完成标准**：embedding 批处理和限流正确，Qdrant / Elasticsearch 读写逻辑正确，模型/维度不一致时拒绝，测试不依赖真实 API。
 
 ---
 
@@ -81,7 +81,7 @@
 
 | 任务 | 状态 | 备注 |
 |---|---|---|
-| 实现 retriever.py（top-k 查询，cosine→similarity 换算，overfetch） | ✅ | overfetch 由 vector store 统一处理 |
+| 实现 retriever.py（Qdrant dense + Elasticsearch keyword + RRF 融合） | ✅ | 已支持 dense-only、keyword-only、hybrid 和来源标记 |
 | 实现相似度阈值过滤（SIMILARITY_THRESHOLD=0.5） | ✅ | 有单测覆盖 |
 | 实现 manifest 有效 chunk 过滤（article_id + content_hash 匹配） | ✅ | 防止残留 chunk 返回 |
 | 实现 prompt.py（RAG prompt 构造，引用编号，程序生成引用列表） | ✅ | 引用不暴露绝对路径 |
@@ -91,7 +91,7 @@
 | 单元测试：test_prompt.py | ✅ | 已覆盖 prompt 和引用 |
 | 单元测试：test_chat.py | ✅ | 已覆盖历史裁剪、无依据回答、引用 |
 
-**完成标准**：检索流程正确，引用列表程序生成，无依据时明确说明，测试不依赖真实 API。
+**完成标准**：hybrid retrieval 流程正确，引用列表程序生成，无依据时明确说明，测试不依赖真实 API。
 
 ---
 
@@ -103,17 +103,31 @@
 
 | 任务 | 状态 | 备注 |
 |---|---|---|
-| 串联 cli.py 中 ingest 命令（scanner→parser→chunker→embedding→vector_store→manifest） | ✅ | 已输出索引摘要 |
+| 串联 cli.py 中 ingest 命令（scanner→parser→chunker→embedding→Qdrant/Elasticsearch→manifest） | ✅ | 已支持双写与删除同步 |
 | 实现 ingest --rebuild / --force | ✅ | 支持清空 Chroma 与 manifest |
-| 串联 cli.py 中 search 命令 | ✅ | 输出相似度、标题、相对路径、chunk、小标题、片段预览 |
+| 串联 cli.py 中 search 命令 | ✅ | 输出相似度、召回来源、标题、相对路径、chunk、小标题、片段预览 |
 | 串联 cli.py 中 chat 命令（/exit /quit / Ctrl-D，会话统计） | ✅ | 已输出答案、引用和会话统计 |
 | 错误处理完善（路径为空、目录不存在、无文章、API key 缺失） | ✅ | CLI 启动前做配置检查 |
-| 端到端测试：test_ingest_e2e.py | 🟨 | 当前 `tests/test_cli.py` 用 mock 覆盖 CLI 编排，真实 Chroma/API e2e 待补 |
-| 端到端测试：test_search_e2e.py | 🟨 | 当前 `tests/test_cli.py` 覆盖输出格式 |
-| 端到端测试：test_chat_e2e.py | 🟨 | 当前 `tests/test_cli.py` 覆盖交互流程 |
-| 编写 README.md（从配置到运行的完整步骤） | ✅ | 已更新 |
+| 最小 smoke test：`tests/test_hybrid_smoke.py` | ✅ | 已覆盖 ingest/search/chat 在依赖就绪假设下的最小主链路 |
+| 编写 README.md（从配置到运行的完整步骤） | ✅ | 已更新为 Qdrant + ES 入口 |
 
-**完成标准**：所有 CLI 命令可用，自动化测试通过；真实文章/API 端到端测试仍归阶段 6 验收。
+**完成标准**：所有 CLI 命令可用，自动化测试通过；真实依赖与真实文章/API 端到端测试仍归阶段 6 验收。
+
+---
+
+## 阶段 5.5：OrbStack 依赖部署基线
+
+**状态**：🟨 已完成静态资产，待 live cluster 验证
+**负责 agent**：infra-agent
+**前置依赖**：阶段 5 完成
+
+| 任务 | 状态 | 备注 |
+|---|---|---|
+| 新增 `k8s/orbstack/` 部署目录 | ✅ | 覆盖 namespace、Qdrant、ECK/Elasticsearch |
+| 新增 `bash/k8s` 启停与 port-forward 脚本 | ✅ | 已通过 `bash -n` 静态检查 |
+| 编写本地部署说明 | ✅ | `docs/orbstack-local-deps.md` 已入库 |
+| `kubectl kustomize k8s/orbstack` 渲染检查 | ✅ | 已通过 |
+| 真实 OrbStack live 启动验证 | ⬜ | 当前 API Server 未启动，待用户环境联调 |
 
 ---
 
@@ -147,6 +161,7 @@
 
 | 日期 | 变更 |
 |---|---|
+| 2026-05-20 | 完成 `Qdrant + Elasticsearch` hybrid retrieval 改造：更新配置、store 抽象、双写 ingest、hybrid retriever、CLI 输出、最小 smoke test，并补齐 OrbStack 依赖部署资产 |
 | 2026-05-12 | 整理 docs 文档结构：规范化 RAG Agent 面试问题清单，补充历史规划和历史 Agent 分工定位，重组 README 文档入口 |
 | 2026-05-12 | 新增改动需求文档沉淀流程，并在 README 增加文档入口 |
 | 2026-05-08 | 打通 CLI ingest/search/chat 主链路，补齐 parser/indexer/retriever/vector_store/chat/chunker 缺口，新增 CLI/scanner/indexer 测试，更新 README |

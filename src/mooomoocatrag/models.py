@@ -47,11 +47,15 @@ class ParsedArticle:
 class IndexManifest:
     schema_version: int = 1
     source_root: str = ""
-    vector_store: str = "chroma"
+    vector_store: str = "qdrant"
+    keyword_store: str = "elasticsearch"
+    retrieval_mode: str = "hybrid_rrf"
     vector_distance_metric: str = "cosine"
     embedding_provider: str = "openai-compatible"
     embedding_model: str = ""
     embedding_dimension: int = 0
+    qdrant_collection: str = ""
+    elasticsearch_index: str = ""
     chunker_config: dict[str, Any] = field(default_factory=dict)
     articles: dict[str, dict[str, Any]] = field(default_factory=dict)
 
@@ -60,6 +64,7 @@ class IndexManifest:
 class RetrievalResult:
     chunk: ChunkMeta
     similarity: float
+    sources: list[str] = field(default_factory=list)
 
 
 @dataclass
@@ -67,3 +72,4 @@ class ChatResponse:
     answer: str
     citations: list[str]
     retrieved_count: int
+    intent: str = "rag_query"

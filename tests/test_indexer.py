@@ -38,9 +38,13 @@ class TestIndexerHelpers:
 
     def test_build_empty_manifest_records_runtime_index_config(self):
         settings = Settings(
-            VECTOR_STORE="chroma",
+            VECTOR_STORE="qdrant",
+            KEYWORD_STORE="elasticsearch",
+            RETRIEVAL_MODE="hybrid_rrf",
             VECTOR_DISTANCE_METRIC="cosine",
             EMBEDDING_MODEL="embedding-model",
+            QDRANT_COLLECTION="mooomoocat_articles_v1",
+            ELASTICSEARCH_INDEX="mooomoocat_article_chunks_v1",
             CHUNK_TARGET_MIN_CHARS=300,
             CHUNK_TARGET_MAX_CHARS=900,
             CHUNK_OVERLAP=80,
@@ -53,6 +57,11 @@ class TestIndexerHelpers:
         )
 
         assert manifest.source_root == "/tmp/articles"
+        assert manifest.vector_store == "qdrant"
+        assert manifest.keyword_store == "elasticsearch"
+        assert manifest.retrieval_mode == "hybrid_rrf"
+        assert manifest.qdrant_collection == "mooomoocat_articles_v1"
+        assert manifest.elasticsearch_index == "mooomoocat_article_chunks_v1"
         assert manifest.embedding_model == "embedding-model"
         assert manifest.embedding_dimension == 1536
         assert manifest.chunker_config == default_chunker_config(settings)

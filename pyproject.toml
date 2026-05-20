@@ -12,7 +12,8 @@ dependencies = [
     "typer>=0.9",
     "openai>=1.0",
     "httpx>=0.24",
-    "chromadb>=0.4",
+    "qdrant-client>=1.9",
+    "elasticsearch>=8.13",
 ]
 
 [project.optional-dependencies]
