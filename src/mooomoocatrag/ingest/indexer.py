@@ -6,7 +6,7 @@ import tempfile
 from pathlib import Path
 from typing import Iterable
 
-from mooomoocatrag.config import Settings
+from mooomoocatrag.config import Settings, get_settings
 from mooomoocatrag.models import ArticleMeta, ChunkMeta, IndexManifest
 
 
@@ -47,7 +47,7 @@ def load_manifest(data_dir: str) -> IndexManifest:
     manifest_path = Path(data_dir) / "index_manifest.json"
 
     if not manifest_path.exists():
-        settings = Settings()
+        settings = get_settings()
         return IndexManifest(
             schema_version=1,
             source_root="",
@@ -67,20 +67,23 @@ def load_manifest(data_dir: str) -> IndexManifest:
     with open(manifest_path, 'r', encoding='utf-8') as f:
         data = json.load(f)
 
+    settings = get_settings()
     return IndexManifest(
         schema_version=data.get("schema_version", 1),
         source_root=data.get("source_root", ""),
-        vector_store=data.get("vector_store", Settings().VECTOR_STORE),
-        keyword_store=data.get("keyword_store", Settings().KEYWORD_STORE),
-        retrieval_mode=data.get("retrieval_mode", Settings().RETRIEVAL_MODE),
-        vector_distance_metric=data.get("vector_distance_metric", Settings().VECTOR_DISTANCE_METRIC),
+        vector_store=data.get("vector_store", settings.VECTOR_STORE),
+        keyword_store=data.get("keyword_store", settings.KEYWORD_STORE),
+        retrieval_mode=data.get("retrieval_mode", settings.RETRIEVAL_MODE),
+        vector_distance_metric=data.get(
+            "vector_distance_metric", settings.VECTOR_DISTANCE_METRIC
+        ),
         embedding_provider=data.get("embedding_provider", "openai-compatible"),
         embedding_model=data.get("embedding_model", ""),
         embedding_dimension=data.get("embedding_dimension", 0),
-        qdrant_collection=data.get("qdrant_collection", Settings().QDRANT_COLLECTION),
+        qdrant_collection=data.get("qdrant_collection", settings.QDRANT_COLLECTION),
         elasticsearch_index=data.get(
             "elasticsearch_index",
-            Settings().ELASTICSEARCH_INDEX,
+            settings.ELASTICSEARCH_INDEX,
         ),
         chunker_config=data.get("chunker_config", {}),
         articles=data.get("articles", {}),
