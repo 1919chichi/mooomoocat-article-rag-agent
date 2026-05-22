@@ -8,7 +8,7 @@ import httpx
 from openai import OpenAI
 
 from mooomoocatrag.config import Settings
-from mooomoocatrag.utils import is_retryable, retry_with_backoff
+from mooomoocatrag.utils import retry_with_backoff
 
 logger = logging.getLogger(__name__)
 
