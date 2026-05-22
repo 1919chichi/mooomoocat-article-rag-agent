@@ -178,3 +178,51 @@ class TestIntentRouter:
         result = router.classify("some ambiguous query")
         assert result.intent == IntentType.QA
         assert result.method == "fallback"
+
+
+from mooomoocatrag.models import IndexManifest
+from mooomoocatrag.rag.intent.handlers.list import handle_list
+
+
+class TestListHandler:
+    def _manifest_with_articles(self):
+        return IndexManifest(
+            articles={
+                "art-1": {
+                    "title": "理财入门",
+                    "source_rel_path": "articles/finance.md",
+                    "content_hash": "h1",
+                },
+                "art-2": {
+                    "title": "消费观念",
+                    "source_rel_path": "articles/consume.md",
+                    "content_hash": "h2",
+                },
+                "art-del": {
+                    "title": "已删除",
+                    "source_rel_path": "articles/del.md",
+                    "content_hash": "h3",
+                    "deleted": True,
+                },
+            }
+        )
+
+    def test_returns_non_deleted_articles(self):
+        manifest = self._manifest_with_articles()
+        response = handle_list("有哪些文章", manifest)
+        assert response.intent == "list"
+        assert "理财入门" in response.answer
+        assert "消费观念" in response.answer
+        assert "已删除" not in response.answer
+
+    def test_retrieved_count_excludes_deleted(self):
+        manifest = self._manifest_with_articles()
+        response = handle_list("有哪些文章", manifest)
+        assert response.retrieved_count == 2
+
+    def test_empty_manifest(self):
+        manifest = IndexManifest(articles={})
+        response = handle_list("有哪些文章", manifest)
+        assert response.intent == "list"
+        assert "为空" in response.answer
+        assert response.retrieved_count == 0
