@@ -93,7 +93,7 @@
 
 | Change | 状态 | 说明 |
 |---|---|---|
-| `add-intent-recognition` | 已实现，任务状态需以 `tasks.md` 为准 | 代码和测试已存在，本次回填 task 状态 |
+| `add-intent-recognition` | 部分实现，任务状态需以 `tasks.md` 为准 | Chat/handler 主体和测试已存在；总开关与 search 集成仍未完成 |
 | `add-qdrant-es-hybrid-retrieval` | 大部分完成，OrbStack live 验证未完成 | 不伪造真实依赖验收结果 |
 ```
 
@@ -200,7 +200,7 @@ Expected: 无输出。
 在变更日志顶部增加：
 
 ```markdown
-| 2026-05-22 | 建立 `docs/README.md` 文档地图，明确 README、docs、OpenSpec、Superpowers 归档边界，并回填已实现意图识别的 OpenSpec task 状态 |
+| 2026-05-22 | 建立 `docs/README.md` 文档地图，明确 README、docs、OpenSpec、Superpowers 归档边界，并按真实代码状态回填意图识别 OpenSpec task |
 ```
 
 ## Task 5: 回填意图识别 OpenSpec task 状态

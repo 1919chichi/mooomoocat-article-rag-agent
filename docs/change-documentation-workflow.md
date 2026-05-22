@@ -10,8 +10,12 @@
 - 架构或长期设计决策：补充 `docs/<topic>-design.md` 或 ADR 风格决策记录。
 - 项目状态变化：更新 `docs/progress.md`。
 - 用户使用方式变化：更新 `README.md`。
+- 长期文档入口变化：更新 `docs/README.md`，标明文档定位、维护状态和过时触发条件。
+- Superpowers 设计与计划：保留在 `docs/superpowers/` 作为归档，不替代 OpenSpec 的当前任务状态。
 
 不要把所有内容都塞进 README。README 只保留项目入口、当前状态、运行方式和关键文档链接；过程、取舍和验收记录放到 `docs/` 或 `openspec/changes/`。
+
+`docs/progress.md` 是项目状态摘要，不是唯一事实源。判断当前真实状态时，需要同时核对代码、测试、OpenSpec task 和长期专题文档。
 
 ## 目录分工
 
@@ -20,8 +24,10 @@
 | `openspec/changes/<change-id>/proposal.md` | 改动前的需求说明 | 为什么改、改什么、不改什么、影响范围 |
 | `openspec/changes/<change-id>/tasks.md` | 改动前的任务拆分 | 可勾选的实现、测试、验证步骤 |
 | `openspec/changes/<change-id>/design.md` | 较复杂改动的设计说明 | 方案取舍、接口边界、风险、兼容性 |
+| `docs/README.md` | 长期文档地图 | 文档分类、维护状态、过时触发条件、OpenSpec 当前变更入口 |
 | `docs/progress.md` | 项目状态与变更日志 | 阶段状态、阻塞项、完成记录 |
 | `docs/<topic>.md` | 长期专题文档 | 缓存策略、意图识别、验收方案、操作手册 |
+| `docs/superpowers/` | Superpowers 设计与计划归档 | 设计过程、实施计划、历史执行上下文 |
 | `README.md` | 项目首页 | 文档入口、安装运行、最小可用说明 |
 
 ## 标准流程
@@ -165,6 +171,18 @@ feat: add intent recognition routing
 fix: handle empty article directory
 ```
 
+### 6. 防止文档过时
+
+每次改动结束前按下面规则核对：
+
+- 新增长期文档：更新 `docs/README.md`。
+- 用户使用方式变化：更新 `README.md`。
+- 项目阶段、验收状态或阻塞项变化：更新 `docs/progress.md`。
+- OpenSpec 需求完成、延期或范围变化：更新对应 `tasks.md`。
+- Superpowers 设计或计划落地后：在 `docs/README.md` 标注为归档，不把它当作当前任务状态源。
+
+如果某份文档只保留历史意义，在 `docs/README.md` 中标注为“历史资料”，不要继续把它当作当前实现依据。
+
 ## 完成标准
 
 一次需求改动只有同时满足下面条件，才算真正完成：
@@ -172,6 +190,7 @@ fix: handle empty article directory
 - OpenSpec change 记录了需求背景、范围和任务拆分。
 - 代码和测试已实现并通过必要验证。
 - `tasks.md` 勾选到真实完成状态。
+- 新增或调整的长期文档已登记到 `docs/README.md`。
 - `docs/progress.md` 记录了项目状态变化。
 - 用户可见行为变化已同步到 README 或专题文档。
 - 最终提交里同时包含代码、测试和文档改动。

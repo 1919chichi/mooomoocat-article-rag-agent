@@ -1,7 +1,8 @@
 # 项目进度控制
 
 > 本文件由团队 lead 维护，记录各阶段完成状态和阻塞项。
-> 最后更新：2026-05-20
+> 本文件记录阶段状态摘要；判断当前真实状态时，还需要结合代码、测试、OpenSpec `tasks.md` 和 `docs/README.md`。
+> 最后更新：2026-05-22
 
 ---
 
@@ -161,6 +162,7 @@
 
 | 日期 | 变更 |
 |---|---|
+| 2026-05-22 | 建立 `docs/README.md` 文档地图，明确 README、docs、OpenSpec、Superpowers 归档边界，并按真实代码状态回填意图识别 OpenSpec task |
 | 2026-05-20 | 完成 `Qdrant + Elasticsearch` hybrid retrieval 改造：更新配置、store 抽象、双写 ingest、hybrid retriever、CLI 输出、最小 smoke test，并补齐 OrbStack 依赖部署资产 |
 | 2026-05-12 | 整理 docs 文档结构：规范化 RAG Agent 面试问题清单，补充历史规划和历史 Agent 分工定位，重组 README 文档入口 |
 | 2026-05-12 | 新增改动需求文档沉淀流程，并在 README 增加文档入口 |
