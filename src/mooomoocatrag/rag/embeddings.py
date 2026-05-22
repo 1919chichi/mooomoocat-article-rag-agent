@@ -65,6 +65,7 @@ def _batch(items: list[str], size: int) -> Iterator[list[str]]:
 def _embed_batch_with_retry(
     client: OpenAI, texts: list[str], model: str
 ) -> list[list[float]]:
+    """带指数退避重试的批量 embedding 请求，对 429/5xx 最多重试 3 次。"""
     wait_time = 1.0
     for attempt in range(4):
         try:
@@ -167,7 +168,7 @@ _VALID_PROVIDERS = ("openai", "volcengine")
 
 
 def get_embedding_strategy(config: Settings) -> EmbeddingStrategy:
-    """Return the appropriate embedding strategy based on EMBEDDING_PROVIDER."""
+    """根据 EMBEDDING_PROVIDER 配置返回对应的 embedding 策略实例。"""
     provider = config.EMBEDDING_PROVIDER.lower()
     if provider not in _VALID_PROVIDERS:
         raise ValueError(
@@ -187,6 +188,6 @@ def get_embedding_strategy(config: Settings) -> EmbeddingStrategy:
 # ---------------------------------------------------------------------------
 
 def embed_texts(texts: list[str], config: Settings) -> list[list[float]]:
-    """Embed a list of texts using the appropriate backend strategy."""
+    """调用 embedding 策略对文本列表批量向量化，返回顺序与输入一一对应。"""
     strategy = get_embedding_strategy(config)
     return strategy.embed_texts(texts, config)

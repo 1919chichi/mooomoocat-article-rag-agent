@@ -13,17 +13,7 @@ SYSTEM_PROMPT = """你是一个基于猫笔刀文章库回答问题的 Agent。
 def build_rag_prompt(
     query: str, results: list[RetrievalResult], history: list[dict] | None = None
 ) -> list[dict]:
-    """
-    Build RAG prompt in OpenAI Chat Completions format.
-
-    Args:
-        query: User query
-        results: Retrieved RetrievalResult list
-        history: Optional chat history (list of dicts with 'role' and 'content')
-
-    Returns:
-        List of message dicts in OpenAI Chat Completions format
-    """
+    """构造 OpenAI Chat Completions 格式的 RAG prompt，包含 system 指令、检索片段和对话历史。"""
     messages: list[dict] = []
 
     # System prompt
@@ -55,15 +45,7 @@ def build_rag_prompt(
 
 
 def format_citations(results: list[RetrievalResult]) -> list[str]:
-    """
-    Generate citation strings for retrieved results.
-
-    Args:
-        results: List of RetrievalResult
-
-    Returns:
-        List of citation strings in format: [N] 文章标题 | source_rel_path | chunk N | 小标题：xxx
-    """
+    """由程序生成引用列表，不依赖 LLM，避免 LLM 伪造或遗漏引用。"""
     citations: list[str] = []
     for i, result in enumerate(results, 1):
         heading = result.chunk.nearest_heading

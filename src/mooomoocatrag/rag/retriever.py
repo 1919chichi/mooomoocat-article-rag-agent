@@ -82,7 +82,7 @@ def retrieve(
             )
         )
 
-    # Filter by manifest: only keep chunks where article exists and content_hash matches
+    # 防止 ingest 中断或删除同步失败时，残留 chunk 被返回给用户
     filtered: list[tuple[RetrievalResult, float]] = []
     for result, similarity in candidates:
         article_data = manifest.articles.get(result.chunk.article_id)
@@ -90,11 +90,11 @@ def retrieve(
             continue
         if article_data.get("deleted"):
             continue
+        # content_hash 不匹配说明文章已更新但旧 chunk 未清理完毕，跳过
         if article_data.get("content_hash") != result.chunk.content_hash:
             continue
         filtered.append((result, similarity))
 
-    # Filter by similarity threshold
     threshold_filtered = [
         (r, s) for r, s in filtered if s >= config.SIMILARITY_THRESHOLD
     ]
@@ -102,27 +102,24 @@ def retrieve(
     # Sort by similarity descending
     threshold_filtered.sort(key=lambda x: x[1], reverse=True)
 
-    # Budget-aware truncation by token count
+    # token 预算截断：按相似度从高到低塞入 chunk，超出 RAG_CONTEXT_TOKEN_BUDGET 即停止
+    # 字符数估算：estimated_tokens = ceil(chars / 1.5)，适用于中文内容
     budget = config.RAG_CONTEXT_TOKEN_BUDGET
     budgeted: list[tuple[RetrievalResult, float]] = []
     current_tokens = 0
 
     for result, similarity in threshold_filtered:
-        # Estimate tokens as ceil(chars / 1.5)
         chunk_tokens = math.ceil(len(result.chunk.text) / 1.5)
         if current_tokens + chunk_tokens > budget:
-            # Try to see if adding this chunk would exceed budget
-            # If budgeted is empty and this chunk alone fits, add it
-            if not budgeted:
-                if chunk_tokens <= budget:
-                    budgeted.append((result, similarity))
-                    current_tokens += chunk_tokens
-            # Otherwise stop
+            # 预算已满；若列表为空且该 chunk 单独能放入，则至少保留一条结果
+            if not budgeted and chunk_tokens <= budget:
+                budgeted.append((result, similarity))
+                current_tokens += chunk_tokens
             break
         budgeted.append((result, similarity))
         current_tokens += chunk_tokens
 
-    # Final top_k truncation
+    # 最终按 HYBRID_FINAL_TOP_K 截断（预算控制优先，top_k 为第二道限制）
     final_top_k = config.HYBRID_FINAL_TOP_K or config.TOP_K
     final_results = [r for r, _ in budgeted[:final_top_k]]
 
@@ -134,6 +131,11 @@ def _fuse_candidates(
     keyword_results: list[dict],
     rrf_k: int,
 ) -> list[dict]:
+    """用 RRF（Reciprocal Rank Fusion）融合 dense 和 keyword 两路检索结果。
+
+    RRF 公式：score += 1 / (k + rank)，k 由调用方传入（通常为 60），rank 从 1 开始。
+    归一化：将 raw_score 除以单路命中时的最大可能分数，映射到 0-1 范围。
+    """
     aggregated: OrderedDict[str, dict] = OrderedDict()
 
     for source_results in (dense_results, keyword_results):
@@ -159,6 +161,7 @@ def _fuse_candidates(
     if not aggregated:
         return []
 
+    # 归一化基准：两路都在第 1 名时的理论最大分数
     source_count = 2
     max_possible_score = source_count * (1.0 / (rrf_k + 1))
     fused: list[dict] = []
@@ -179,6 +182,3 @@ def _fuse_candidates(
     return fused
 
 
-def _estimate_tokens(text: str) -> int:
-    """Estimate token count for text."""
-    return math.ceil(len(text) / 1.5)

@@ -13,6 +13,7 @@ def parse_article(
     source_root: str | None = None,
     source_rel_path: str | None = None,
 ) -> ParsedArticle:
+    """解析文章文件，提取标题、正文和元数据。content_hash 使用原始字节 sha256。"""
     path = Path(file_path)
     raw_content = path.read_bytes()
     content = raw_content.decode('utf-8')
@@ -52,6 +53,7 @@ def _relative_path(path: Path, source_root: str | None) -> str:
 
 
 def _parse_markdown(content: str, fallback_title: str) -> tuple[str, str]:
+    """提取 Markdown 标题和正文。优先级：frontmatter title > 一级标题 > 文件名。"""
     title = fallback_title
     body = content
 
@@ -75,12 +77,14 @@ def _parse_markdown(content: str, fallback_title: str) -> tuple[str, str]:
 
 
 def _parse_text(content: str, fallback_title: str) -> tuple[str, str]:
+    """TXT 文件直接使用文件名作为标题，只做正文清洗。"""
     title = fallback_title
     body = _clean_body(content)
     return title, body
 
 
 def _clean_body(text: str) -> str:
+    """合并连续空行为单个空行，并去除尾部多余空行。"""
     lines = text.splitlines()
 
     cleaned_lines = []

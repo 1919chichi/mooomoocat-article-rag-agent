@@ -84,8 +84,10 @@ class QdrantVectorStore(DenseStore):
             kwargs["api_key"] = self.config.QDRANT_API_KEY
         return QdrantClient(**kwargs)
 
-    def _ensure_collection(self, embedding_dimension: int) -> None:
-        client = self._client()
+    def _ensure_collection(self, embedding_dimension: int, client=None) -> None:
+        """若 Qdrant collection 不存在则创建，已存在则跳过（幂等操作）。"""
+        if client is None:
+            client = self._client()
         exists = bool(client.collection_exists(self.config.QDRANT_COLLECTION))
         if exists:
             return
@@ -101,8 +103,8 @@ class QdrantVectorStore(DenseStore):
         if not chunks:
             return
 
-        self._ensure_collection(chunks[0].embedding_dimension)
         client = self._client()
+        self._ensure_collection(chunks[0].embedding_dimension, client=client)
         points = [
             qdrant_models.PointStruct(
                 id=chunk.chunk_id,
@@ -185,8 +187,10 @@ class ElasticsearchKeywordStore(KeywordStore):
             kwargs["ca_certs"] = self.config.ELASTICSEARCH_CA_CERT_PATH
         return Elasticsearch(**kwargs)
 
-    def _ensure_index(self) -> None:
-        client = self._client()
+    def _ensure_index(self, client=None) -> None:
+        """若 ES index 不存在则创建并设置 mapping，已存在则跳过（幂等操作）。"""
+        if client is None:
+            client = self._client()
         if client.indices.exists(index=self.config.ELASTICSEARCH_INDEX):
             return
         client.indices.create(
@@ -214,8 +218,8 @@ class ElasticsearchKeywordStore(KeywordStore):
         if not chunks:
             return
 
-        self._ensure_index()
         client = self._client()
+        self._ensure_index(client=client)
         actions = [
             {
                 "_op_type": "index",
@@ -330,6 +334,11 @@ def check_consistency(
     manifest: IndexManifest,
     embedding_dimension: int | None = None,
 ) -> None:
+    """校验当前配置与 manifest 记录是否一致，不一致则抛出 RuntimeError 并提示重建索引。
+
+    检查项：embedding_model、embedding_dimension、vector_store、keyword_store、
+    retrieval_mode、vector_distance_metric、qdrant_collection、elasticsearch_index、chunker_config。
+    """
     errors: list[str] = []
 
     if manifest.embedding_model != config.EMBEDDING_MODEL:

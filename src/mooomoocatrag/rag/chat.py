@@ -7,7 +7,7 @@ from openai import OpenAI
 
 from mooomoocatrag.config import Settings
 from mooomoocatrag.models import ChatResponse, IndexManifest, RetrievalResult
-from mooomoocatrag.rag.prompt import build_rag_prompt, format_citations
+from mooomoocatrag.rag.prompt import SYSTEM_PROMPT, build_rag_prompt, format_citations
 from mooomoocatrag.rag.retriever import retrieve
 
 
@@ -25,6 +25,10 @@ def _estimate_tokens(text: str) -> int:
     return math.ceil(len(text) / 1.5)
 
 
+# 模块级常量：SYSTEM_PROMPT 长度固定，不必在每次 chat_turn 调用时重复估算
+_SYSTEM_PROMPT_TOKENS = math.ceil(len(SYSTEM_PROMPT) / 1.5)
+
+
 def _recent_valid_history(history: list[dict], max_messages: int) -> list[dict]:
     valid_history = [
         {"role": turn.get("role", "user"), "content": turn.get("content", "")}
@@ -40,22 +44,11 @@ def chat_turn(
     config: Settings,
     manifest: IndexManifest,
 ) -> ChatResponse:
-    """
-    Process a single chat turn with RAG.
-
-    Args:
-        query: User query
-        history: Chat history (list of dicts with 'role' and 'content')
-        config: Settings object
-        manifest: IndexManifest
-
-    Returns:
-        ChatResponse with answer, citations, and retrieved_count
-    """
-    # Always retrieve - enforced at code level, not by prompt
+    """执行单轮 RAG 对话：强制检索 → token 预算控制 → 构造 prompt → 调用 LLM → 生成引用列表。"""
+    # 强制检索：在代码层面保证每次提问都先执行 retrieve，不依赖 prompt 指令
     results = retrieve(query, config, manifest)
 
-    # If no results, return insufficient content response
+    # 无检索结果时直接返回"没有足够依据"，不让 LLM 用常识填充
     if not results:
         return ChatResponse(
             answer=INSUFFICIENT_CONTENT_RESPONSE,
@@ -63,17 +56,8 @@ def chat_turn(
             retrieved_count=0,
         )
 
-    # Calculate input token budget
     input_token_budget = config.LLM_CONTEXT_WINDOW - config.MAX_OUTPUT_TOKENS
-
-    # Estimate tokens for system prompt
-    system_prompt_tokens = _estimate_tokens(
-        "你是一个基于猫笔刀文章库回答问题的 Agent。\n"
-        "你必须优先依据给定的文章片段回答。\n"
-        "使用 [1]、[2] 等标记引用对应片段。\n"
-        "不要把没有出现在文章片段中的内容说成猫笔刀文章观点。\n"
-        "如果文章片段不足以回答，直接说明\"当前猫笔刀文章库中没有找到足够依据\"。"
-    )
+    system_prompt_tokens = _SYSTEM_PROMPT_TOKENS
 
     # Keep only the most recent CHAT_HISTORY_TURNS * 2 valid messages
     # (user+assistant pairs), regardless of whether the budget is tight.
@@ -97,7 +81,7 @@ def chat_turn(
     # Total estimated tokens
     total_estimated = system_prompt_tokens + retrieved_tokens + query_tokens + history_tokens
 
-    # If over budget, reduce chunks by removing the lowest similarity ones first.
+    # 超出预算时优先裁剪低相似度 chunk，保留对用户最相关的内容
     if total_estimated > input_token_budget:
         for keep_count in range(len(adjusted_results), 0, -1):
             test_results = adjusted_results[:keep_count]

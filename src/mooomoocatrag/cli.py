@@ -113,6 +113,8 @@ def ingest(
             source_root=str(source_root),
             source_rel_path=article.source_rel_path,
         )
+        # 覆盖 scanner 的文件名占位符，确保 manifest 与 chunk 元数据中的 title 一致
+        article.title = parsed.title
         chunks = chunk_article(parsed, article.article_id, settings)
         vectors = embed_texts([chunk.text for chunk in chunks], settings)
 

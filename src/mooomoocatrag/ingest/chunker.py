@@ -15,7 +15,13 @@ class Section:
     content: str
 
 
+def _make_chunk_id(article_id: str, content_hash: str, idx: int) -> str:
+    """chunk_id = sha256(article_id + content_hash + chunk_index)，content_hash 变化时 ID 也变。"""
+    return hashlib.sha256(f"{article_id}{content_hash}{idx}".encode()).hexdigest()
+
+
 def chunk_article(parsed: ParsedArticle, article_id: str, config: Settings) -> list[ChunkMeta]:
+    """将文章按标题结构切块，短 section 合并，长 section 拆分，支持跨段落 overlap。"""
     sections = _split_by_headings(parsed.body)
 
     if not sections:
@@ -37,12 +43,9 @@ def chunk_article(parsed: ParsedArticle, article_id: str, config: Settings) -> l
         text = '\n'.join(parts).strip()
         return _make_chunk(text, heading, article_id, parsed, idx, config)
 
-    def calc_chunk_id(aid: str, chash: str, idx: int) -> str:
-        return hashlib.sha256(f"{aid}{chash}{idx}".encode()).hexdigest()
-
     def _make_chunk(text: str, heading: str, aid: str, pa: ParsedArticle, idx: int, cfg: Settings) -> ChunkMeta:
         return ChunkMeta(
-            chunk_id=calc_chunk_id(aid, pa.content_hash, idx),
+            chunk_id=_make_chunk_id(aid, pa.content_hash, idx),
             article_id=aid,
             chunk_index=idx,
             nearest_heading=heading,
@@ -76,7 +79,9 @@ def chunk_article(parsed: ParsedArticle, article_id: str, config: Settings) -> l
             current_chunk_part_headings = []
             continue
 
-        test_len = sum(len(p) for p in current_chunk_parts) + section_len + (len('\n'.join(current_chunk_parts)) if current_chunk_parts else 0)
+        # 用算术估算合并长度，避免在循环内拼接临时字符串（O(n) → O(1)）
+        # 等价于 len('\n'.join(current_chunk_parts + [section_text]))，但无列表和字符串分配
+        test_len = len('\n'.join(current_chunk_parts)) + 1 + len(section_text)
 
         if not current_chunk_parts:
             current_chunk_parts = [section_text]
@@ -98,6 +103,7 @@ def chunk_article(parsed: ParsedArticle, article_id: str, config: Settings) -> l
 
                 overlap_text = ''
                 section_heading = section.heading if section.heading else ''
+                # overlap 不跨标题边界：只有新 section 与前一个 part 同属一个 heading 时才取 overlap
                 if overlap > 0 and current_chunk_part_headings and current_chunk_part_headings[-1] == section_heading:
                     overlap_chars = []
                     char_count = 0
@@ -128,6 +134,7 @@ def chunk_article(parsed: ParsedArticle, article_id: str, config: Settings) -> l
 
 
 def _split_by_headings(text: str) -> list[Section]:
+    """按 Markdown 任意级别标题（#~######）将正文拆分为 Section 列表。"""
     lines = text.splitlines()
     sections: list[Section] = []
     current_heading = ''
@@ -154,6 +161,7 @@ def _split_by_headings(text: str) -> list[Section]:
 
 
 def _split_long_section(section_text: str, heading: str, article_id: str, parsed: ParsedArticle, config: Settings, start_idx: int, overlap_text: str = '') -> list[ChunkMeta]:
+    """将超过 max_chars 的 section 按段落进一步切分，段落间保留 overlap。"""
     max_chars = config.CHUNK_TARGET_MAX_CHARS
     overlap = config.CHUNK_OVERLAP
 
@@ -167,7 +175,7 @@ def _split_long_section(section_text: str, heading: str, article_id: str, parsed
     def flush(idx: int) -> ChunkMeta:
         text = '\n'.join(current_parts).strip()
         return ChunkMeta(
-            chunk_id=hashlib.sha256(f"{article_id}{parsed.content_hash}{idx}".encode()).hexdigest(),
+            chunk_id=_make_chunk_id(article_id, parsed.content_hash, idx),
             article_id=article_id,
             chunk_index=idx,
             nearest_heading=heading,
@@ -224,13 +232,14 @@ def _split_long_section(section_text: str, heading: str, article_id: str, parsed
 
 
 def _split_paragraph(para: str, heading: str, article_id: str, parsed: ParsedArticle, config: Settings, idx: int) -> list[ChunkMeta]:
+    """将超过 max_chars 的单段落按行或句子拆分，保证 embedding 不截断。"""
     max_chars = config.CHUNK_TARGET_MAX_CHARS
 
     chunks: list[ChunkMeta] = []
 
     if len(para) <= max_chars:
         return [ChunkMeta(
-            chunk_id=hashlib.sha256(f"{article_id}{parsed.content_hash}{idx}".encode()).hexdigest(),
+            chunk_id=_make_chunk_id(article_id, parsed.content_hash, idx),
             article_id=article_id,
             chunk_index=idx,
             nearest_heading=heading,
@@ -248,7 +257,7 @@ def _split_paragraph(para: str, heading: str, article_id: str, parsed: ParsedArt
 
     def make_chunk(text: str, chunk_idx: int) -> ChunkMeta:
         return ChunkMeta(
-            chunk_id=hashlib.sha256(f"{article_id}{parsed.content_hash}{chunk_idx}".encode()).hexdigest(),
+            chunk_id=_make_chunk_id(article_id, parsed.content_hash, chunk_idx),
             article_id=article_id,
             chunk_index=chunk_idx,
             nearest_heading=heading,

@@ -11,6 +11,7 @@ from mooomoocatrag.models import ArticleMeta, ChunkMeta, IndexManifest
 
 
 def default_chunker_config(settings: Settings) -> dict[str, int]:
+    """从 Settings 构造 manifest 存储用的 chunker_config 字典，用于一致性检查。"""
     return {
         "chunk_target_min_chars": settings.CHUNK_TARGET_MIN_CHARS,
         "chunk_target_max_chars": settings.CHUNK_TARGET_MAX_CHARS,
@@ -23,6 +24,7 @@ def build_empty_manifest(
     source_root: str,
     embedding_dimension: int = 0,
 ) -> IndexManifest:
+    """构造初始 manifest，用于首次建库或 --rebuild 时重置索引元数据。"""
     return IndexManifest(
         schema_version=1,
         source_root=source_root,
@@ -41,6 +43,7 @@ def build_empty_manifest(
 
 
 def load_manifest(data_dir: str) -> IndexManifest:
+    """从 manifest 文件加载索引状态；文件不存在时返回空 manifest（使用当前配置默认值）。"""
     manifest_path = Path(data_dir) / "index_manifest.json"
 
     if not manifest_path.exists():
@@ -85,6 +88,7 @@ def load_manifest(data_dir: str) -> IndexManifest:
 
 
 def save_manifest(manifest: IndexManifest, data_dir: str) -> None:
+    """原子写入 manifest：先写临时文件，再用 os.replace 替换，防止写入中断导致文件损坏。"""
     data_dir_path = Path(data_dir)
     data_dir_path.mkdir(parents=True, exist_ok=True)
 
@@ -123,6 +127,7 @@ def article_to_manifest_entry(
     cleanup_chunk_ids: list[str] | None = None,
     deleted: bool = False,
 ) -> dict:
+    """构造单篇文章的 manifest 条目，保留首次入库时间（created_at 不随重新索引更新）。"""
     created_at = (
         existing_entry.get("created_at")
         if existing_entry and existing_entry.get("created_at")
@@ -151,6 +156,7 @@ def find_deleted_article_ids(
     manifest: IndexManifest,
     current_article_ids: Iterable[str],
 ) -> list[str]:
+    """返回在 manifest 中存在但当前扫描结果中不存在的 article_id，即已删除文章。"""
     current = set(current_article_ids)
     return [
         article_id
