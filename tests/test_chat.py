@@ -353,3 +353,42 @@ class TestChatTurn:
         assert len(messages) == 2
         assert messages[0]["role"] == "system"
         assert messages[1]["role"] == "user"
+
+
+class TestHandleSummarize:
+    @patch("mooomoocatrag.rag.intent.handlers.summarize.retrieve")
+    def test_no_results_returns_insufficient_content(self, mock_retrieve, settings, manifest):
+        """Test summarize handler returns no-content message when no results found."""
+        mock_retrieve.return_value = []
+
+        summarize_result = IntentResult(intent=IntentType.SUMMARIZE, confidence=0.9, method="rule")
+        with patch("mooomoocatrag.rag.chat.IntentRouter") as mock_router_cls:
+            mock_router_cls.return_value.classify.return_value = summarize_result
+            response = chat_turn("总结猫的文章", [], settings, manifest)
+
+        assert response.answer == INSUFFICIENT_CONTENT_RESPONSE
+        assert response.citations == []
+        assert response.retrieved_count == 0
+
+    @patch("mooomoocatrag.rag.intent.handlers.summarize.retrieve")
+    @patch("mooomoocatrag.rag.intent.handlers.summarize.OpenAI")
+    def test_summarize_returns_answer_with_citations(
+        self, mock_openai_class, mock_retrieve, settings, manifest, sample_results
+    ):
+        """Test summarize handler returns answer and citations for retrieved results."""
+        mock_retrieve.return_value = sample_results
+
+        mock_client = MagicMock()
+        mock_openai_class.return_value = mock_client
+        mock_response = MagicMock()
+        mock_response.choices = [MagicMock(message=MagicMock(content="猫喜欢晒太阳。"))]
+        mock_client.chat.completions.create.return_value = mock_response
+
+        summarize_result = IntentResult(intent=IntentType.SUMMARIZE, confidence=0.9, method="rule")
+        with patch("mooomoocatrag.rag.chat.IntentRouter") as mock_router_cls:
+            mock_router_cls.return_value.classify.return_value = summarize_result
+            response = chat_turn("总结猫的文章", [], settings, manifest)
+
+        assert response.answer == "猫喜欢晒太阳。"
+        assert len(response.citations) > 0
+        assert response.retrieved_count == len(sample_results)

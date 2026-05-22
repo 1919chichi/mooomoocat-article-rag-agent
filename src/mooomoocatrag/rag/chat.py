@@ -12,6 +12,7 @@ from mooomoocatrag.rag.intent.handlers import (
     handle_summarize,
 )
 
+
 def chat_turn(
     query: str,
     history: list[dict],

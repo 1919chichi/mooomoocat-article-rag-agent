@@ -1,8 +1,9 @@
 from mooomoocatrag.rag.intent.handlers.chitchat import handle_chitchat
 from mooomoocatrag.rag.intent.handlers.list import handle_list
 from mooomoocatrag.rag.intent.handlers.off_topic import handle_off_topic
-from mooomoocatrag.rag.intent.handlers.qa import handle_qa, INSUFFICIENT_CONTENT_RESPONSE
+from mooomoocatrag.rag.intent.handlers.qa import handle_qa
 from mooomoocatrag.rag.intent.handlers.summarize import handle_summarize
+from mooomoocatrag.rag.prompt import INSUFFICIENT_CONTENT_RESPONSE
 
 __all__ = [
     "handle_chitchat",
