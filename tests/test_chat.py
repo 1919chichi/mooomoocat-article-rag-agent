@@ -8,6 +8,7 @@ import pytest
 from mooomoocatrag.config import Settings
 from mooomoocatrag.models import ChunkMeta, IndexManifest, RetrievalResult
 from mooomoocatrag.rag.chat import chat_turn, NO_INSUFFICIENT_CONTENTResponse
+from mooomoocatrag.rag.intent.types import IntentResult, IntentType
 
 
 @pytest.fixture
@@ -81,17 +82,25 @@ def sample_results(sample_chunk):
 
 
 class TestChatTurn:
+    @pytest.fixture(autouse=True)
+    def mock_intent_router(self):
+        """Force QA intent so existing tests exercise the QA handler path."""
+        qa_result = IntentResult(intent=IntentType.QA, confidence=0.9, method="rule")
+        with patch("mooomoocatrag.rag.chat.IntentRouter") as mock_router_cls:
+            mock_router_cls.return_value.classify.return_value = qa_result
+            yield mock_router_cls
+
     @staticmethod
     def _llm_messages(mock_openai_class):
         mock_client = mock_openai_class.return_value
         return mock_client.chat.completions.create.call_args[1]["messages"]
 
-    @patch("mooomoocatrag.rag.chat.retrieve")
+    @patch("mooomoocatrag.rag.intent.handlers.qa.retrieve")
     def test_forces_retrieval_on_every_turn(self, mock_retrieve, settings, manifest, sample_results):
         """Test that retrieval is always called (enforced at code level)"""
         mock_retrieve.return_value = sample_results
 
-        with patch("mooomoocatrag.rag.chat.OpenAI") as mock_openai_class:
+        with patch("mooomoocatrag.rag.intent.handlers.qa.OpenAI") as mock_openai_class:
             mock_client = MagicMock()
             mock_openai_class.return_value = mock_client
             mock_response = MagicMock()
@@ -103,7 +112,7 @@ class TestChatTurn:
             # Verify retrieve was called
             mock_retrieve.assert_called_once_with("test query", settings, manifest)
 
-    @patch("mooomoocatrag.rag.chat.retrieve")
+    @patch("mooomoocatrag.rag.intent.handlers.qa.retrieve")
     def test_no_retrieval_result_returns_no_content_message(
         self, mock_retrieve, settings, manifest
     ):
@@ -116,8 +125,8 @@ class TestChatTurn:
         assert response.citations == []
         assert response.retrieved_count == 0
 
-    @patch("mooomoocatrag.rag.chat.retrieve")
-    @patch("mooomoocatrag.rag.chat.OpenAI")
+    @patch("mooomoocatrag.rag.intent.handlers.qa.retrieve")
+    @patch("mooomoocatrag.rag.intent.handlers.qa.OpenAI")
     def test_budget_normal_keeps_recent_valid_history(
         self, mock_openai_class, mock_retrieve, settings, manifest, sample_results
     ):
@@ -158,8 +167,8 @@ class TestChatTurn:
             {"role": "assistant", "content": "Assistant message 9"},
         ]
 
-    @patch("mooomoocatrag.rag.chat.retrieve")
-    @patch("mooomoocatrag.rag.chat.OpenAI")
+    @patch("mooomoocatrag.rag.intent.handlers.qa.retrieve")
+    @patch("mooomoocatrag.rag.intent.handlers.qa.OpenAI")
     def test_budget_trim_keeps_highest_similarity_chunks(
         self, mock_openai_class, mock_retrieve, settings, manifest, sample_chunk
     ):
@@ -205,8 +214,8 @@ class TestChatTurn:
         assert "L" * 120 not in current_user_content
         assert response.retrieved_count == 2
 
-    @patch("mooomoocatrag.rag.chat.retrieve")
-    @patch("mooomoocatrag.rag.chat.OpenAI")
+    @patch("mooomoocatrag.rag.intent.handlers.qa.retrieve")
+    @patch("mooomoocatrag.rag.intent.handlers.qa.OpenAI")
     def test_budget_constraint_trims_chunks_first(
         self, mock_openai_class, mock_retrieve, settings, manifest, sample_results
     ):
@@ -235,8 +244,8 @@ class TestChatTurn:
         # Verify LLM was called
         mock_client.chat.completions.create.assert_called_once()
 
-    @patch("mooomoocatrag.rag.chat.retrieve")
-    @patch("mooomoocatrag.rag.chat.OpenAI")
+    @patch("mooomoocatrag.rag.intent.handlers.qa.retrieve")
+    @patch("mooomoocatrag.rag.intent.handlers.qa.OpenAI")
     def test_returns_correct_retrieved_count(
         self, mock_openai_class, mock_retrieve, settings, manifest, sample_results
     ):
@@ -254,8 +263,8 @@ class TestChatTurn:
         # retrieved_count should be same as sample_results length (or less if budget trimmed)
         assert response.retrieved_count <= len(sample_results)
 
-    @patch("mooomoocatrag.rag.chat.retrieve")
-    @patch("mooomoocatrag.rag.chat.OpenAI")
+    @patch("mooomoocatrag.rag.intent.handlers.qa.retrieve")
+    @patch("mooomoocatrag.rag.intent.handlers.qa.OpenAI")
     def test_citations_are_generated(
         self, mock_openai_class, mock_retrieve, settings, manifest, sample_results
     ):
@@ -276,8 +285,8 @@ class TestChatTurn:
             assert "/Users/" not in citation
             assert "/home/" not in citation
 
-    @patch("mooomoocatrag.rag.chat.retrieve")
-    @patch("mooomoocatrag.rag.chat.OpenAI")
+    @patch("mooomoocatrag.rag.intent.handlers.qa.retrieve")
+    @patch("mooomoocatrag.rag.intent.handlers.qa.OpenAI")
     def test_llm_called_with_correct_params(
         self, mock_openai_class, mock_retrieve, settings, manifest, sample_results
     ):
@@ -301,8 +310,8 @@ class TestChatTurn:
         assert call_kwargs["model"] == settings.LLM_MODEL
         assert call_kwargs["max_tokens"] == settings.MAX_OUTPUT_TOKENS
 
-    @patch("mooomoocatrag.rag.chat.retrieve")
-    @patch("mooomoocatrag.rag.chat.OpenAI")
+    @patch("mooomoocatrag.rag.intent.handlers.qa.retrieve")
+    @patch("mooomoocatrag.rag.intent.handlers.qa.OpenAI")
     def test_empty_answer_handling(
         self, mock_openai_class, mock_retrieve, settings, manifest, sample_results
     ):
@@ -320,8 +329,8 @@ class TestChatTurn:
         # Should handle None content gracefully
         assert response.answer == ""
 
-    @patch("mooomoocatrag.rag.chat.retrieve")
-    @patch("mooomoocatrag.rag.chat.OpenAI")
+    @patch("mooomoocatrag.rag.intent.handlers.qa.retrieve")
+    @patch("mooomoocatrag.rag.intent.handlers.qa.OpenAI")
     def test_history_not_included_when_empty(
         self, mock_openai_class, mock_retrieve, settings, manifest, sample_results
     ):
