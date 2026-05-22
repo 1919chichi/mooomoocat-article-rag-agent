@@ -187,7 +187,7 @@ def _split_long_section(section_text: str, heading: str, article_id: str, parsed
             embedding_dimension=0,
         )
 
-    char_count = sum(len(p) for p in current_parts) + (len(overlap_text) if overlap_text else 0)
+    char_count = sum(len(p) for p in current_parts)
 
     for para in paragraphs:
         para = para.strip()
