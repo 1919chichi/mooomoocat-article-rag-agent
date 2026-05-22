@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
+from functools import cached_property
 from types import SimpleNamespace
 from typing import Protocol
 
@@ -77,6 +78,7 @@ class KeywordStore(Protocol):
 class QdrantVectorStore(DenseStore):
     config: Settings
 
+    @cached_property
     def _client(self):
         _require_dependency("qdrant-client", QdrantClient)
         kwargs = {"url": self.config.QDRANT_URL}
@@ -84,10 +86,9 @@ class QdrantVectorStore(DenseStore):
             kwargs["api_key"] = self.config.QDRANT_API_KEY
         return QdrantClient(**kwargs)
 
-    def _ensure_collection(self, embedding_dimension: int, client=None) -> None:
+    def _ensure_collection(self, embedding_dimension: int) -> None:
         """若 Qdrant collection 不存在则创建，已存在则跳过（幂等操作）。"""
-        if client is None:
-            client = self._client()
+        client = self._client
         exists = bool(client.collection_exists(self.config.QDRANT_COLLECTION))
         if exists:
             return
@@ -103,8 +104,8 @@ class QdrantVectorStore(DenseStore):
         if not chunks:
             return
 
-        client = self._client()
-        self._ensure_collection(chunks[0].embedding_dimension, client=client)
+        client = self._client
+        self._ensure_collection(chunks[0].embedding_dimension)
         points = [
             qdrant_models.PointStruct(
                 id=chunk.chunk_id,
@@ -133,7 +134,7 @@ class QdrantVectorStore(DenseStore):
     def delete_chunks(self, chunk_ids: list[str]) -> None:
         if not chunk_ids:
             return
-        client = self._client()
+        client = self._client
         client.delete(
             collection_name=self.config.QDRANT_COLLECTION,
             points_selector=qdrant_models.PointIdsList(points=chunk_ids),
@@ -141,7 +142,7 @@ class QdrantVectorStore(DenseStore):
         )
 
     def query_dense(self, query_vector: list[float], top_k: int) -> list[dict]:
-        client = self._client()
+        client = self._client
         results = client.search(
             collection_name=self.config.QDRANT_COLLECTION,
             query_vector=query_vector,
@@ -164,7 +165,7 @@ class QdrantVectorStore(DenseStore):
         return candidates
 
     def clear(self) -> None:
-        client = self._client()
+        client = self._client
         if client.collection_exists(self.config.QDRANT_COLLECTION):
             client.delete_collection(self.config.QDRANT_COLLECTION)
 
@@ -173,6 +174,7 @@ class QdrantVectorStore(DenseStore):
 class ElasticsearchKeywordStore(KeywordStore):
     config: Settings
 
+    @cached_property
     def _client(self):
         _require_dependency("elasticsearch", Elasticsearch)
         kwargs: dict = {"hosts": [self.config.ELASTICSEARCH_URL]}
@@ -187,10 +189,9 @@ class ElasticsearchKeywordStore(KeywordStore):
             kwargs["ca_certs"] = self.config.ELASTICSEARCH_CA_CERT_PATH
         return Elasticsearch(**kwargs)
 
-    def _ensure_index(self, client=None) -> None:
+    def _ensure_index(self) -> None:
         """若 ES index 不存在则创建并设置 mapping，已存在则跳过（幂等操作）。"""
-        if client is None:
-            client = self._client()
+        client = self._client
         if client.indices.exists(index=self.config.ELASTICSEARCH_INDEX):
             return
         client.indices.create(
@@ -218,8 +219,8 @@ class ElasticsearchKeywordStore(KeywordStore):
         if not chunks:
             return
 
-        client = self._client()
-        self._ensure_index(client=client)
+        client = self._client
+        self._ensure_index()
         actions = [
             {
                 "_op_type": "index",
@@ -245,7 +246,7 @@ class ElasticsearchKeywordStore(KeywordStore):
     def delete_chunks(self, chunk_ids: list[str]) -> None:
         if not chunk_ids:
             return
-        client = self._client()
+        client = self._client
         client.delete_by_query(
             index=self.config.ELASTICSEARCH_INDEX,
             query={"terms": {"chunk_id": chunk_ids}},
@@ -253,7 +254,7 @@ class ElasticsearchKeywordStore(KeywordStore):
         )
 
     def query_keyword(self, query: str, top_k: int) -> list[dict]:
-        client = self._client()
+        client = self._client
         response = client.search(
             index=self.config.ELASTICSEARCH_INDEX,
             size=top_k,
@@ -280,7 +281,7 @@ class ElasticsearchKeywordStore(KeywordStore):
         return candidates
 
     def clear(self) -> None:
-        client = self._client()
+        client = self._client
         if client.indices.exists(index=self.config.ELASTICSEARCH_INDEX):
             client.indices.delete(index=self.config.ELASTICSEARCH_INDEX)
 
