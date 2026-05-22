@@ -162,8 +162,9 @@ def _fuse_candidates(
         return []
 
     # 归一化基准：两路都在第 1 名时的理论最大分数
-    source_count = 2
-    max_possible_score = source_count * (1.0 / (rrf_k + 1))
+    source_lists = (dense_results, keyword_results)
+    num_sources = len(source_lists)
+    max_possible_score = num_sources * (1.0 / (rrf_k + 1))
     fused: list[dict] = []
     for entry in aggregated.values():
         fused.append(
