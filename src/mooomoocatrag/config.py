@@ -76,6 +76,8 @@ class Settings(BaseSettings):
     MAX_OUTPUT_TOKENS: int = 2048
     CHAT_HISTORY_TURNS: int = 4
     LLM_CONTEXT_WINDOW: int = 32768
+    INTENT_LLM_MODEL: str = ""
+    INTENT_CONFIDENCE_THRESHOLD: float = 0.6
 
     model_config = {
         "env_file": ".env",
@@ -97,6 +99,10 @@ class Settings(BaseSettings):
     @property
     def effective_llm_api_key(self) -> str:
         return self.LLM_API_KEY or self.OPENAI_COMPAT_API_KEY
+
+    @property
+    def effective_intent_llm_model(self) -> str:
+        return self.INTENT_LLM_MODEL or self.LLM_MODEL
 
     @property
     def manifest_path(self) -> str:
