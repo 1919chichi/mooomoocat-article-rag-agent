@@ -187,3 +187,31 @@ class TestFormatCitations:
         """Test empty results returns empty citations list"""
         citations = format_citations([])
         assert citations == []
+
+
+class TestSummarize:
+    def test_insufficient_content_response_is_string(self):
+        from mooomoocatrag.rag.prompt import INSUFFICIENT_CONTENT_RESPONSE
+        assert isinstance(INSUFFICIENT_CONTENT_RESPONSE, str)
+        assert "没有找到足够依据" in INSUFFICIENT_CONTENT_RESPONSE
+
+    def test_build_summarize_prompt_returns_two_messages(self, sample_results):
+        from mooomoocatrag.rag.prompt import build_summarize_prompt
+        messages = build_summarize_prompt("总结一下猫的文章", sample_results)
+        assert len(messages) == 2
+        assert messages[0]["role"] == "system"
+        assert messages[1]["role"] == "user"
+
+    def test_build_summarize_prompt_includes_chunks(self, sample_results):
+        from mooomoocatrag.rag.prompt import build_summarize_prompt
+        messages = build_summarize_prompt("总结", sample_results)
+        user_content = messages[1]["content"]
+        assert "[1]" in user_content
+        assert "[2]" in user_content
+        assert "This is a test article about cats" in user_content
+
+    def test_build_summarize_prompt_includes_query(self, sample_results):
+        from mooomoocatrag.rag.prompt import build_summarize_prompt
+        query = "总结猫的生活习性"
+        messages = build_summarize_prompt(query, sample_results)
+        assert query in messages[1]["content"]
