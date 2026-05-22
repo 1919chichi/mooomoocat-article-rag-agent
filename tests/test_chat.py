@@ -7,7 +7,8 @@ import pytest
 
 from mooomoocatrag.config import Settings
 from mooomoocatrag.models import ChunkMeta, IndexManifest, RetrievalResult
-from mooomoocatrag.rag.chat import chat_turn, NO_INSUFFICIENT_CONTENTResponse
+from mooomoocatrag.rag.chat import chat_turn
+from mooomoocatrag.rag.intent.handlers import INSUFFICIENT_CONTENT_RESPONSE
 from mooomoocatrag.rag.intent.types import IntentResult, IntentType
 
 
@@ -121,7 +122,7 @@ class TestChatTurn:
 
         response = chat_turn("test query", [], settings, manifest)
 
-        assert response.answer == NO_INSUFFICIENT_CONTENTResponse
+        assert response.answer == INSUFFICIENT_CONTENT_RESPONSE
         assert response.citations == []
         assert response.retrieved_count == 0
 

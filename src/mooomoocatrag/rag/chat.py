@@ -12,10 +12,6 @@ from mooomoocatrag.rag.intent.handlers import (
     handle_summarize,
 )
 
-# Backward-compatible alias kept for existing imports.
-NO_INSUFFICIENT_CONTENTResponse = INSUFFICIENT_CONTENT_RESPONSE
-
-
 def chat_turn(
     query: str,
     history: list[dict],
