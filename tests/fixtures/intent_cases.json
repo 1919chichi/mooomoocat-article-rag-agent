@@ -1,0 +1,22 @@
+[
+  {"query": "你好", "expected_intent": "chitchat", "expected_method": "rule"},
+  {"query": "谢谢", "expected_intent": "chitchat", "expected_method": "rule"},
+  {"query": "再见", "expected_intent": "chitchat", "expected_method": "rule"},
+  {"query": "早安", "expected_intent": "chitchat", "expected_method": "rule"},
+  {"query": "晚安", "expected_intent": "chitchat", "expected_method": "rule"},
+  {"query": "哈哈", "expected_intent": "chitchat", "expected_method": "rule"},
+  {"query": "感谢", "expected_intent": "chitchat", "expected_method": "rule"},
+  {"query": "列举所有关于理财的文章", "expected_intent": "list", "expected_method": "rule"},
+  {"query": "有哪些关于投资的文章", "expected_intent": "list", "expected_method": "rule"},
+  {"query": "列出所有讲消费观的文章", "expected_intent": "list", "expected_method": "rule"},
+  {"query": "哪些文章讲了理财", "expected_intent": "list", "expected_method": "rule"},
+  {"query": "总结一下猫笔刀关于消费观的文章", "expected_intent": "summarize", "expected_method": "rule"},
+  {"query": "摘要一下这篇文章的核心", "expected_intent": "summarize", "expected_method": "rule"},
+  {"query": "概括猫笔刀关于职场的观点", "expected_intent": "summarize", "expected_method": "rule"},
+  {"query": "归纳一下猫笔刀的消费理念", "expected_intent": "summarize", "expected_method": "rule"},
+  {"query": "你好，帮我找一篇关于投资的文章", "expected_intent": null, "expected_method": null, "note": "rule returns None, falls to LLM"},
+  {"query": "猫笔刀怎么看待月光族", "expected_intent": null, "expected_method": null, "note": "QA, goes to LLM"},
+  {"query": "猫笔刀有没有写过关于职场发展的内容", "expected_intent": null, "expected_method": null, "note": "QA, goes to LLM"},
+  {"query": "帮我写一首诗", "expected_intent": null, "expected_method": null, "note": "off_topic, goes to LLM"},
+  {"query": "今天天气怎么样", "expected_intent": null, "expected_method": null, "note": "off_topic, goes to LLM"}
+]

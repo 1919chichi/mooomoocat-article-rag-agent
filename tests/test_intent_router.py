@@ -226,3 +226,41 @@ class TestListHandler:
         assert response.intent == "list"
         assert "为空" in response.answer
         assert response.retrieved_count == 0
+
+
+import json
+from pathlib import Path
+
+
+class TestRuleClassifierGoldenDataset:
+    """Test RuleClassifier against all golden cases that have a rule-level expectation."""
+
+    def test_golden_rule_cases(self):
+        fixture_path = Path(__file__).parent / "fixtures" / "intent_cases.json"
+        cases = json.loads(fixture_path.read_text(encoding="utf-8"))
+        clf = RuleClassifier()
+
+        rule_cases = [c for c in cases if c.get("expected_method") == "rule"]
+        assert len(rule_cases) >= 10, "Need at least 10 rule-level golden cases"
+
+        for case in rule_cases:
+            result = clf.classify(case["query"])
+            assert result is not None, f"Rule should match: {case['query']!r}"
+            assert result.intent.value == case["expected_intent"], (
+                f"query={case['query']!r}: "
+                f"expected {case['expected_intent']}, got {result.intent.value}"
+            )
+            assert result.method == "rule", f"Expected rule method for {case['query']!r}"
+
+    def test_golden_no_rule_cases(self):
+        fixture_path = Path(__file__).parent / "fixtures" / "intent_cases.json"
+        cases = json.loads(fixture_path.read_text(encoding="utf-8"))
+        clf = RuleClassifier()
+
+        no_rule_cases = [c for c in cases if c.get("expected_method") is None]
+        for case in no_rule_cases:
+            result = clf.classify(case["query"])
+            assert result is None, (
+                f"Rule should NOT match {case['query']!r} "
+                f"(note: {case.get('note', '')}), got {result}"
+            )
