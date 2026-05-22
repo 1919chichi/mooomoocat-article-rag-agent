@@ -5,7 +5,8 @@ from unittest.mock import MagicMock, patch
 import pytest
 
 from mooomoocatrag.config import Settings
-from mooomoocatrag.rag.embeddings import _batch, embed_texts, _is_retryable
+from mooomoocatrag.rag.embeddings import _batch, embed_texts
+from mooomoocatrag.utils import is_retryable
 
 
 class MockEmbeddingItem:
@@ -86,7 +87,7 @@ class TestEmbedTexts:
         assert mock_sleep.call_count == 1
 
     @patch("mooomoocatrag.rag.embeddings.OpenAI")
-    @patch("mooomoocatrag.rag.embeddings.time.sleep")
+    @patch("mooomoocatrag.utils.time.sleep")
     def test_retry_on_429(self, mock_sleep, mock_openai_class):
         settings = Settings(
             EMBEDDING_MODEL="test-model",
@@ -111,7 +112,7 @@ class TestEmbedTexts:
         assert mock_sleep.call_count == 2
 
     @patch("mooomoocatrag.rag.embeddings.OpenAI")
-    @patch("mooomoocatrag.rag.embeddings.time.sleep")
+    @patch("mooomoocatrag.utils.time.sleep")
     def test_retry_on_500(self, mock_sleep, mock_openai_class):
         settings = Settings(
             EMBEDDING_MODEL="test-model",
@@ -187,19 +188,19 @@ class TestEmbedTexts:
 
 class TestIsRetryable:
     def test_retryable_429(self):
-        assert _is_retryable(Exception("error 429")) is True
+        assert is_retryable(Exception("error 429")) is True
 
     def test_retryable_500(self):
-        assert _is_retryable(Exception("error 500")) is True
+        assert is_retryable(Exception("error 500")) is True
 
     def test_retryable_502(self):
-        assert _is_retryable(Exception("error 502")) is True
+        assert is_retryable(Exception("error 502")) is True
 
     def test_retryable_503(self):
-        assert _is_retryable(Exception("error 503")) is True
+        assert is_retryable(Exception("error 503")) is True
 
     def test_retryable_504(self):
-        assert _is_retryable(Exception("error 504")) is True
+        assert is_retryable(Exception("error 504")) is True
 
     def test_not_retryable(self):
-        assert _is_retryable(Exception("connection error")) is False
+        assert is_retryable(Exception("connection error")) is False
