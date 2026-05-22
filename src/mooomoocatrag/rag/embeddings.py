@@ -1,6 +1,5 @@
 from __future__ import annotations
 
-import abc
 import time
 import logging
 from typing import Iterator
@@ -9,25 +8,15 @@ import httpx
 from openai import OpenAI
 
 from mooomoocatrag.config import Settings
+from mooomoocatrag.utils import is_retryable, retry_with_backoff
 
 logger = logging.getLogger(__name__)
 
 
-# ---------------------------------------------------------------------------
-# Strategy interface
-# ---------------------------------------------------------------------------
-
-class EmbeddingStrategy(abc.ABC):
-    """Abstract base for different embedding API backends."""
-
-    @abc.abstractmethod
+class EmbeddingStrategy:
     def embed_texts(self, texts: list[str], config: Settings) -> list[list[float]]:
-        ...
+        raise NotImplementedError
 
-
-# ---------------------------------------------------------------------------
-# OpenAI-compatible strategy (OpenAI, DashScope, Zhipu, etc.)
-# ---------------------------------------------------------------------------
 
 class OpenAIEmbeddingStrategy(EmbeddingStrategy):
     """Standard OpenAI /openai/embeddings endpoint."""
@@ -50,7 +39,6 @@ class OpenAIEmbeddingStrategy(EmbeddingStrategy):
         for batch_idx, batch in enumerate(batches):
             if batch_idx > 0:
                 time.sleep(interval)
-
             embedding = _embed_batch_with_retry(client, batch, config.EMBEDDING_MODEL)
             all_embeddings.extend(embedding)
 
@@ -65,32 +53,10 @@ def _batch(items: list[str], size: int) -> Iterator[list[str]]:
 def _embed_batch_with_retry(
     client: OpenAI, texts: list[str], model: str
 ) -> list[list[float]]:
-    """带指数退避重试的批量 embedding 请求，对 429/5xx 最多重试 3 次。"""
-    wait_time = 1.0
-    for attempt in range(4):
-        try:
-            response = client.embeddings.create(
-                model=model,
-                input=texts,
-            )
-            return [item.embedding for item in response.data]
-        except Exception as e:
-            if attempt == 3:
-                raise
-            if not _is_retryable(e):
-                raise
-            time.sleep(wait_time)
-            wait_time *= 2
+    return retry_with_backoff(
+        lambda: [item.embedding for item in client.embeddings.create(model=model, input=texts).data]
+    )
 
-
-def _is_retryable(error: Exception) -> bool:
-    msg = str(error).lower()
-    return "429" in msg or "500" in msg or "502" in msg or "503" in msg or "504" in msg
-
-
-# ---------------------------------------------------------------------------
-# Volcengine ARK multimodal embedding strategy
-# ---------------------------------------------------------------------------
 
 class VolcengineEmbeddingStrategy(EmbeddingStrategy):
     """Volcengine ARK /embeddings/multimodal endpoint.
@@ -125,22 +91,10 @@ class VolcengineEmbeddingStrategy(EmbeddingStrategy):
     def _embed_with_retry(
         self, url: str, api_key: str, text: str, model: str
     ) -> list[float]:
-        wait_time = 1.0
-        for attempt in range(4):
-            try:
-                return self._call_api(url, api_key, text, model)
-            except Exception as e:
-                if attempt == 3:
-                    raise
-                if not _is_retryable(e):
-                    raise
-                time.sleep(wait_time)
-                wait_time *= 2
+        return retry_with_backoff(lambda: self._call_api(url, api_key, text, model))
 
     @staticmethod
-    def _call_api(
-        url: str, api_key: str, text: str, model: str
-    ) -> list[float]:
+    def _call_api(url: str, api_key: str, text: str, model: str) -> list[float]:
         payload = {
             "model": model,
             "input": [{"type": "text", "text": text}],
@@ -149,20 +103,14 @@ class VolcengineEmbeddingStrategy(EmbeddingStrategy):
             "Content-Type": "application/json",
             "Authorization": f"Bearer {api_key}",
         }
-
         resp = httpx.post(url, json=payload, headers=headers, timeout=60.0)
         if resp.status_code != 200:
             raise RuntimeError(
                 f"Volcengine embedding API error: status={resp.status_code} body={resp.text}"
             )
-
         data = resp.json()
         return data["data"]["embedding"]
 
-
-# ---------------------------------------------------------------------------
-# Strategy resolver
-# ---------------------------------------------------------------------------
 
 _VALID_PROVIDERS = ("openai", "volcengine")
 
@@ -175,17 +123,11 @@ def get_embedding_strategy(config: Settings) -> EmbeddingStrategy:
             f"Invalid EMBEDDING_PROVIDER={config.EMBEDDING_PROVIDER!r}, "
             f"must be one of {_VALID_PROVIDERS}"
         )
-
     if provider == "volcengine":
         logger.info("Using Volcengine embedding strategy")
         return VolcengineEmbeddingStrategy()
-
     return OpenAIEmbeddingStrategy()
 
-
-# ---------------------------------------------------------------------------
-# Public API (unchanged signature)
-# ---------------------------------------------------------------------------
 
 def embed_texts(texts: list[str], config: Settings) -> list[list[float]]:
     """调用 embedding 策略对文本列表批量向量化，返回顺序与输入一一对应。"""
