@@ -10,3 +10,4 @@ dist/
 .idea/
 /.codex/
 /.claude/
+.worktrees/
